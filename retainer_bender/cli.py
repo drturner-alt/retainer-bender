@@ -44,6 +44,15 @@ def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine, oc
         worst = float(np.min(d[np.isfinite(d)])) if np.isfinite(d).any() else float("nan")
         L.append(f"Closest approach along the wire: {worst:+.2f} mm "
                  "(negative = wire would press into a tooth)")
+        ends = (s < 3.0) | (s > s[-1] - 3.0)
+        fin = np.isfinite(d) & ends
+        if fin.any():
+            stand = float(d[fin].max())
+            L.append(f"End 3 mm at each canine: up to {stand:.2f} mm off the tooth "
+                     "(the composite pad must cover this)")
+            if stand > 0.6:
+                plan.warnings.append(f"an end of the wire stands {stand:.2f} mm off the canine; "
+                                     "try --hook-toward tooth or a smaller --hook-angle")
     if occl is not None:
         L.append(f"Occlusion: nearest upper tooth is {occl:.2f} mm from the wire")
     L += ["", "Bend list, from the first end out (also works for bending by hand):",
@@ -180,8 +189,8 @@ def main(argv=None):
                        help="degrees each canine end curls round (0 = straight ends; default 90)")
         p.add_argument("--hook-radius", type=float, default=2.0,
                        help="radius of the end curls in mm (default 2.0)")
-        p.add_argument("--hook-toward", choices=["tongue", "tooth"], default="tongue",
-                       help="tongue (default): the ends curl back in toward the midline")
+        p.add_argument("--hook-toward", choices=["tooth", "tongue"], default="tooth",
+                       help="tooth (default): the curls wrap onto the canine, under the pad")
 
     p = sub.add_parser("plan", help="plan a wire from picked points")
     p.add_argument("picks", type=Path)

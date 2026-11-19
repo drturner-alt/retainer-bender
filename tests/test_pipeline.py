@@ -117,9 +117,14 @@ def test_hooks_curl_both_ends_and_still_build(tmp_path, wire):
                                    hooks=Hooks(90, 2.0))
     assert problems == []
     assert hooked.total_length > plain.total_length + 2 * 2.5
-    # two 90-degree curls add about 180 degrees of turning in all
+    # two curls add turning (less than 2 x 90 where they are wrapped onto the
+    # canine), and wrapped curls stay on the tooth where the pad covers them
     extra = np.abs(np.degrees(hooked.turns)).sum() - np.abs(np.degrees(plain.turns)).sum()
-    assert 140 < extra < 260
+    assert 90 < extra < 260
+    from retainer_bender.planner import clearance
+    s, d, _ = clearance(hooked, tris)
+    ends = ((s < 3) | (s > s[-1] - 3)) & np.isfinite(d)
+    assert d[ends].max() < 0.6
 
 
 def test_program_raises_and_lowers_pin_around_every_bend(wire):

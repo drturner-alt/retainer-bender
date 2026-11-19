@@ -79,7 +79,7 @@ class Hooks:
     """Retention curls at the two canine ends, in the wire's plane."""
     angle_deg: float = 90.0     # how far the end curls round; 0 = straight ends
     radius_mm: float = 2.0      # radius of the curl, to the wire centre
-    toward: str = "tongue"      # "tongue" curls in toward the midline; "tooth" onto the canine
+    toward: str = "tooth"       # "tooth" wraps onto the canine; "tongue" curls in toward the midline
 
 
 def add_hooks(curve, hooks, tooth_side_start, tooth_side_end, step=0.02):
@@ -120,20 +120,48 @@ def _max_filter(x, k):
     return np.max(np.lib.stride_tricks.sliding_window_view(pad, 2 * k + 1), axis=1)
 
 
+def roll_disc(outline, C, D, w, R):
+    """Roll a disc of radius R along the inside of the outline.
+
+    The wire goes where the disc's edge reaches: it follows each lingual
+    surface and spans any embrasure the disc is too big to drop into, with an
+    arc no tighter than R. outline[i] = C + w[i] * D[i] (rays from C).
+    Returns (wire curve along the same rays, mask of rays where the wire
+    rests on the outline).
+    """
+    t = np.gradient(outline, axis=0)
+    t /= np.maximum(np.linalg.norm(t, axis=1, keepdims=True), 1e-12)
+    n = np.column_stack([-t[:, 1], t[:, 0]])
+    flip = np.sum(n * (C - outline), axis=1) < 0
+    n[flip] *= -1                                   # point into the free side
+    centres = outline + R * n
+    dist = np.linalg.norm(centres[:, None, :] - outline[None, :, :], axis=2).min(axis=1)
+    centres = centres[dist >= R - 0.01]             # discs that fit without cutting a tooth
+    if not len(centres):
+        return outline.copy(), np.ones(len(w), bool)
+    rel = centres - C                               # (k, 2)
+    along = D @ rel.T                               # (rays, k)
+    perp2 = np.sum(rel ** 2, axis=1)[None, :] - along ** 2
+    far = np.where(perp2 <= R * R, along + np.sqrt(np.maximum(R * R - perp2, 0)), -np.inf)
+    reach = far.max(axis=1)
+    reach = np.where(np.isfinite(reach), np.minimum(reach, w), w)
+    return C + reach[:, None] * D, reach >= w - 0.03
+
+
 def lingual_outline(mesh, origin, e_u, e_v, normal, a, m, b, offset, r_wire, bridge_mm=4.0,
-                    step=0.1, min_spacing=2.5, prominence=0.1):
+                    step=0.1, roll_radius=3.0):
     """Auto-design: find where the wire touches each tooth.
 
     The scan is cut at the wire's plane (and a wire radius above and below
     it). Rays fan out from a point behind the arch (the midline click
     mirrored across the canine-to-canine line), and along each the wire's
-    centre can come out until it is `offset` from a tooth. Along that outline
-    each tooth is a dip toward the tongue and each embrasure a bump away from
-    it. The wire touches the bottom of each dip: those become its contact
-    points, along with the two canine clicks at the ends. a, m, b are the
-    three clicks in plane coordinates.
+    centre can come out until it is `offset` from a tooth. A disc of
+    `roll_radius` is rolled along the inside of that outline (roll_disc):
+    the wire follows the lingual surfaces and bridges embrasures. a, m, b
+    are the three clicks in plane coordinates.
 
-    Returns (contact points in order, the outline, warnings).
+    Returns (centre of each contact patch, with the two ends; the wire
+    centre line; warnings).
     """
     from .mesh import slice_plane
     warnings = []
@@ -203,26 +231,23 @@ def lingual_outline(mesh, origin, e_u, e_v, normal, a, m, b, offset, r_wire, bri
     w = np.interp(np.arange(n_rays), idx, w[idx])
     outline = C + w[:, None] * D
 
-    # Light smoothing so scan noise does not make false dips.
-    sig = max(1, int(0.3 / h))
-    ker = np.exp(-0.5 * (np.arange(-3 * sig, 3 * sig + 1) / sig) ** 2)
-    ws = np.convolve(np.pad(w, 3 * sig, mode="edge"), ker / ker.sum(), "valid")
-    win = max(1, int(min_spacing / 2 / h))
-    cands = [i for i in range(win, n_rays - win)
-             if ws[i] <= ws[max(0, i - win):i + win + 1].min() + 1e-12]
-    # Keep a dip only if a real bump (an embrasure) separates it from the
-    # previous one; otherwise keep whichever sits further toward the tongue.
-    dips = []
-    for i in cands:
-        if dips and ws[dips[-1]:i + 1].max() - max(ws[dips[-1]], ws[i]) < prominence:
-            if ws[i] < ws[dips[-1]]:
-                dips[-1] = i
-            continue
-        dips.append(i)
-    end_gap = max(1, int(1.5 / h))
-    dips = [i for i in dips if end_gap <= i <= n_rays - 1 - end_gap]
-    contacts = np.vstack([outline[0], outline[dips], outline[-1]])
-    return contacts, outline, warnings
+    curve, touching = roll_disc(outline, C, D, w, roll_radius)
+    # contact patches: runs where the wire rests on the outline
+    contacts = [curve[0]]
+    i = 0
+    while i < n_rays:
+        if touching[i]:
+            j = i
+            while j < n_rays and touching[j]:
+                j += 1
+            mid = (i + j - 1) // 2
+            if (j - i) * h >= 0.3 and 1.0 / h <= mid <= n_rays - 1 - 1.0 / h:
+                contacts.append(curve[mid])
+            i = j
+        else:
+            i += 1
+    contacts.append(curve[-1])
+    return np.array(contacts), curve, warnings
 
 
 def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=None, resolve=True,
@@ -284,7 +309,7 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
         found, outline, w2 = lingual_outline(mesh, origin, e_u, e_v, normal, contacts[0],
                                              contacts[1], contacts[2], r + contact_offset, r)
         warnings += w2
-        dense = g.catmull_rom(found, samples_per_seg=400)
+        dense = outline
         auto_contacts = found
     elif style == "smooth":
         dense = g.catmull_rom(uv, samples_per_seg=400)

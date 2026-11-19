@@ -79,19 +79,21 @@ the 3-click design instead. Open `demo/preview.svg` and read
 - **Auto (3 clicks):** the scan is cut at the wire's plane, and also a wire
   radius above and below it, because the lingual surface bulges toward the
   cingulum just under the wire's centre. Rays fan out from behind the arch to
-  find how far out the wire can sit at each point. Along that outline each
-  tooth shows up as a dip and each embrasure as a bump, so the wire's contact
-  with each incisor is the bottom of its dip. A smooth curve runs through
-  those contacts and the two canine clicks.
+  find how far out the wire can sit at each point. A 3 mm disc is then rolled
+  along the inside of that outline, and the wire goes where its edge reaches.
+  It follows each lingual surface and spans any embrasure the disc can't
+  drop into.
 - **Every contact:** the clicks are flattened onto the plane, and the report
   says how far each had to move. A flat wire can't reach a contact well above
   or below the rest. A smooth curve runs through them.
 - Either way, wherever the curve would cut into a tooth (across a convex
   canine, for example), it is pushed out just clear.
-- A curl is added at each end, 90° at 2 mm radius by default. It turns back in
-  toward the midline, like the usual hand-bent 3-3. Set it with `--hook-angle`
-  and `--hook-radius`, turn it onto the canine with `--hook-toward tooth`, or
-  leave it off with `--hook-angle 0`.
+- A curl is added at each end, 90° at 2 mm radius by default. It turns toward
+  the canine and is wrapped onto its lingual surface, so the composite pad
+  covers it. The report gives how far the last 3 mm stand off the tooth. Set
+  it with `--hook-angle` and `--hook-radius`, curl it in toward the midline
+  with `--hook-toward tongue` (on the first real scan that left it 2 mm off
+  the canine), or leave it off with `--hook-angle 0`.
 - The curve is replaced by straight pieces at least 1 mm long that stay within
   0.04 mm of it. That gives a feed length for each piece and a bend angle at
   each joint, usually about 20 bends: 3–15° along the arc and 20–30° in the curls.
