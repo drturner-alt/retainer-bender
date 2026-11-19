@@ -23,7 +23,7 @@ def consistently_wound(tris):
     return all(v == 1 for v in e.values()) and all((k[1], k[0]) in e for k in e)
 
 
-@pytest.fixture(params=["028", "032"])
+@pytest.fixture(params=["026", "028", "032"])
 def wire(request):
     return get_wire(request.param)
 

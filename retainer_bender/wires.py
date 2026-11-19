@@ -1,6 +1,7 @@
 """Wire sizes the bender is set up for."""
 
 WIRES = {
+    "026": {"label": '0.026" SS', "d_in": 0.026, "d_mm": 0.026 * 25.4},
     "028": {"label": '0.028" SS', "d_in": 0.028, "d_mm": 0.028 * 25.4},
     "032": {"label": '0.032" SS', "d_in": 0.032, "d_mm": 0.032 * 25.4},
 }

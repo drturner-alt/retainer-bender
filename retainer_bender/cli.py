@@ -170,7 +170,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def common(p):
-        p.add_argument("--wire", default="032", help="028 or 032 (default 032)")
+        p.add_argument("--wire", default="032", help="026, 028 or 032 (default 032)")
         p.add_argument("--machine", help="machine.json (default config/machine.json)")
         p.add_argument("--springback", help="springback table json (default: placeholder for the wire)")
         p.add_argument("-o", "--out", type=Path, required=True)
