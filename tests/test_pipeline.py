@@ -12,6 +12,17 @@ from retainer_bender.synthetic import make_case
 from retainer_bender.wires import get_wire
 
 
+def consistently_wound(tris):
+    """Closed and every face facing the same way: each directed edge once,
+    and its reverse once."""
+    e = {}
+    for t in np.round(tris, 4):
+        for a, b in ((0, 1), (1, 2), (2, 0)):
+            k = (tuple(t[a]), tuple(t[b]))
+            e[k] = e.get(k, 0) + 1
+    return all(v == 1 for v in e.values()) and all((k[1], k[0]) in e for k in e)
+
+
 @pytest.fixture(params=["028", "032"])
 def wire(request):
     return get_wire(request.param)
@@ -75,6 +86,7 @@ def test_jig_is_closed_and_outward(tmp_path, wire):
             k = tuple(sorted((tuple(t[a]), tuple(t[b]))))
             edges[k] = edges.get(k, 0) + 1
     assert set(edges.values()) == {2}
+    assert consistently_wound(jig)
 
 
 def test_stl_round_trip(tmp_path):
@@ -105,11 +117,9 @@ def test_hooks_curl_both_ends_and_still_build(tmp_path, wire):
                                    hooks=Hooks(90, 2.0))
     assert problems == []
     assert hooked.total_length > plain.total_length + 2 * 2.5
-    T = np.degrees(hooked.turns)
-    s = np.cumsum(hooked.lengths)[:-1]
-    head = T[s < 5.0].sum()
-    tail = T[s > hooked.total_length - 5.0].sum()
-    assert abs(head) > 70 and abs(tail) > 70
+    # two 90-degree curls add about 180 degrees of turning in all
+    extra = np.abs(np.degrees(hooked.turns)).sum() - np.abs(np.degrees(plain.turns)).sum()
+    assert 140 < extra < 260
 
 
 def test_program_raises_and_lowers_pin_around_every_bend(wire):
@@ -130,3 +140,54 @@ def test_program_raises_and_lowers_pin_around_every_bend(wire):
         elif c.startswith("FEED"):
             assert not up
     assert cmds.count("PIN UP") == 2
+
+
+def _auto_picks():
+    tris, picks = make_case({"41": 0.3})
+    three = [p for p in picks if p["label"] in ("43m", "41", "33m")]
+    return tris, [Pick(np.array(p["p"]), np.array(p["n"]), p["label"]) for p in three]
+
+
+def test_auto_design_touches_every_incisor(tmp_path, wire):
+    tris, pk = _auto_picks()
+    plan, problems, _ = run_plan(pk, wire, Machine.load(), Springback.default_for(wire["key"]),
+                                 tmp_path, mesh=tris, style="auto")
+    assert problems == []
+    from retainer_bender.planner import clearance
+    _, d, at = clearance(plan, tris)
+    assert np.min(d[np.isfinite(d)]) > -0.02            # never into a tooth
+    assert len(at) == 6                                 # two ends + four incisors found
+    assert np.all(np.abs(at) < 0.08)                    # and touching each
+
+
+def test_wire_stl_is_closed_and_sits_on_the_scan(tmp_path):
+    wire = get_wire("032")
+    tris, pk = _auto_picks()
+    plan, _, _ = run_plan(pk, wire, Machine.load(), Springback.default_for("032"), tmp_path,
+                          mesh=tris, style="auto")
+    w = load_stl(tmp_path / "wire.stl")
+    assert signed_volume(w) > 0
+    assert consistently_wound(w)
+    from retainer_bender.geometry import arc_lengths
+    sides = 16
+    area = 0.5 * sides * (wire["d_mm"] / 2) ** 2 * np.sin(2 * np.pi / sides)
+    expected = area * arc_lengths(plan.curve)[-1]
+    assert abs(signed_volume(w) - expected) / expected < 0.02
+    from retainer_bender.mesh import signed_distances
+    d = signed_distances(w.reshape(-1, 3), tris)
+    assert np.min(d[np.isfinite(d)]) > -0.03
+
+
+def test_occlusion_check_flags_close_upper_teeth(tmp_path):
+    wire = get_wire("032")
+    tris, pk = _auto_picks()
+    sb = Springback.default_for("032")
+    far = tris + [0, 0, 30]
+    _, _, text = run_plan(pk, wire, Machine.load(), sb, tmp_path / "far", mesh=tris,
+                          style="auto", opposing=far)
+    assert "upper teeth come within" not in text
+    # a fake "upper" sitting right on the wire's lingual side
+    near = tris + [0, -1.2, 1.5]
+    _, _, text = run_plan(pk, wire, Machine.load(), sb, tmp_path / "near", mesh=tris,
+                          style="auto", opposing=near)
+    assert "upper teeth come within" in text

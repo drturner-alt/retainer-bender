@@ -39,15 +39,20 @@
 <aside>
   <h1>3-3 retainer picks</h1>
   <label class="btn">Open STL<input id="file" type="file" accept=".stl" hidden></label>
-  <p class="muted">Drag to rotate, right-drag to pan, scroll to zoom. <b>Click</b> on the tooth to add a point.
-  Pick in order from one end of the wire to the other:</p>
-  <ol class="muted">
-    <li>43, distal end of the bond area</li>
-    <li>43, mesial end of the bond area</li>
-    <li>42, 41, 31, 32: where the wire should touch, about two-thirds up the lingual surface</li>
+  <p class="muted">Drag to rotate, right-drag to pan, scroll to zoom. <b>Click</b> on a tooth to add a point.</p>
+  <p><label><input type="radio" name="mode" value="auto" checked> Auto (3 clicks)</label>
+     <label><input type="radio" name="mode" value="manual"> Every contact</label></p>
+  <ol class="muted" id="help-auto">
+    <li>43: lingual, where the wire should end (centre of the bond pad)</li>
+    <li>Midline: lingual of 41/31, at the height the wire should run (about two-thirds up)</li>
+    <li>33: lingual, where the wire should end</li>
+  </ol>
+  <ol class="muted" id="help-manual" hidden>
+    <li>43, distal end of the bond area, then mesial end</li>
+    <li>42, 41, 31, 32: where the wire should touch, about two-thirds up the lingual</li>
     <li>33, mesial end, then distal end of the bond area</li>
   </ol>
-  <p class="muted">Add a second point on an incisor if the wire should hug its whole lingual surface.</p>
+  <p class="muted">The three clicks set the wire's plane. The software then finds where the wire touches each incisor.</p>
   <h1>Points</h1>
   <ol id="list"></ol>
   <button id="undo">Undo</button><button id="clear">Clear</button>
@@ -115,6 +120,7 @@ let down = null;
 renderer.domElement.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY]; });
 renderer.domElement.addEventListener("pointerup", e => {
   if (!mesh || !down || e.button !== 0) return;
+  if (mode === "auto" && picks.length >= 3) { status("Three points picked. Undo to change one."); return; }
   if (Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
   const r = renderer.domElement.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -127,8 +133,19 @@ renderer.domElement.addEventListener("pointerup", e => {
   picks.push({ p: hit.point.toArray(), n: n.toArray(), label: defaultLabel(picks.length) });
   redraw();
 });
-const ORDER = ["43d", "43m", "42", "41", "31", "32", "33m", "33d"];
-function defaultLabel(i) { return ORDER[i] || `P${i + 1}`; }
+const ORDER = {
+  auto: ["43", "mid", "33"],
+  manual: ["43d", "43m", "42", "41", "31", "32", "33m", "33d"],
+};
+let mode = "auto";
+document.querySelectorAll('input[name="mode"]').forEach(el => el.onchange = () => {
+  mode = el.value;
+  document.getElementById("help-auto").hidden = mode !== "auto";
+  document.getElementById("help-manual").hidden = mode !== "manual";
+  picks.forEach((pk, i) => pk.label = defaultLabel(i));
+  redraw();
+});
+function defaultLabel(i) { return ORDER[mode][i] || `P${i + 1}`; }
 
 function redraw() {
   markers.clear();
@@ -155,6 +172,7 @@ document.getElementById("undo").onclick = () => { picks.pop(); redraw(); };
 document.getElementById("clear").onclick = () => { picks.length = 0; redraw(); };
 document.getElementById("save").onclick = () => {
   if (picks.length < 3) { status("Pick at least three points first."); return; }
+  if (mode === "auto" && picks.length !== 3) { status("Auto mode needs exactly three points."); return; }
   const blob = new Blob([JSON.stringify({ units: "mm", source: fileName, points: picks }, null, 1)],
                         { type: "application/json" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);

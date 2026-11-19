@@ -152,3 +152,37 @@ def jig_stl(plan, path, plate_mm=2.0, wall_mm=1.2, slack_mm=0.12):
              _sweep(path2d, half, half + wall_mm, plate_mm - 0.2, top),
              _sweep(path2d, -half - wall_mm, -half, plate_mm - 0.2, top)]
     save_stl(path, np.vstack(parts))
+
+
+def wire_stl(plan, path, sides=16, step=0.2):
+    """The planned wire as a solid, in the scan's own coordinates.
+
+    Load it with the scan to look at the fit in 3D, or merge it into the
+    model before printing an overlay clear retainer so the retainer clears
+    the wire.
+    """
+    c2 = g.resample(plan.curve, step)
+    c3 = plan.to_3d(c2)
+    r = plan.wire["d_mm"] / 2
+    t = np.gradient(c3, axis=0)
+    t /= np.linalg.norm(t, axis=1, keepdims=True)
+    b = np.cross(t, plan.normal)
+    b /= np.linalg.norm(b, axis=1, keepdims=True)
+    n = np.cross(b, t)
+    ang = np.linspace(0, 2 * np.pi, sides, endpoint=False)
+    rings = (c3[:, None, :] + r * (np.cos(ang)[None, :, None] * n[:, None, :]
+                                   + np.sin(ang)[None, :, None] * b[:, None, :]))
+    tris = []
+    for i in range(len(rings) - 1):
+        for j in range(sides):
+            a0, a1 = rings[i, j], rings[i, (j + 1) % sides]
+            b0, b1 = rings[i + 1, j], rings[i + 1, (j + 1) % sides]
+            tris += [[a0, b1, b0], [a0, a1, b1]]      # outward: (n, b, t) is right-handed
+    for ring, centre, flip in ((rings[0], c3[0], True), (rings[-1], c3[-1], False)):
+        for j in range(sides):
+            tri = [centre, ring[j], ring[(j + 1) % sides]]
+            tris.append(tri[::-1] if flip else tri)
+    tris = np.array(tris)
+    if signed_volume(tris) < 0:
+        tris = tris[:, ::-1]
+    save_stl(path, tris)

@@ -55,7 +55,7 @@ class Plan:
     normal: np.ndarray
     labels: list
     contacts_2d: np.ndarray          # picks flattened onto the plane
-    centers_2d: np.ndarray           # wire centre at each pick
+    centers_2d: np.ndarray           # wire centre at each contact
     out_of_plane: np.ndarray         # how far each centre was flattened (mm)
     curve: np.ndarray                # dense target centre line
     vertices: np.ndarray             # bend points
@@ -63,6 +63,7 @@ class Plan:
     turns: np.ndarray                # radians, + = left walking from the first pick
     path_error: float
     warnings: list = field(default_factory=list)
+    contact_labels: list = field(default_factory=list)
 
     def to_3d(self, uv):
         uv = np.asarray(uv, float)
@@ -78,7 +79,7 @@ class Hooks:
     """Retention curls at the two canine ends, in the wire's plane."""
     angle_deg: float = 90.0     # how far the end curls round; 0 = straight ends
     radius_mm: float = 2.0      # radius of the curl, to the wire centre
-    toward: str = "tooth"       # "tooth" curls onto the canine; "tongue" the other way
+    toward: str = "tongue"      # "tongue" curls in toward the midline; "tooth" onto the canine
 
 
 def add_hooks(curve, hooks, tooth_side_start, tooth_side_end, step=0.02):
@@ -107,6 +108,121 @@ def add_hooks(curve, hooks, tooth_side_start, tooth_side_end, step=0.02):
     head = curl(curve[0], curve[0] - curve[k], tooth_side_start)[::-1]
     tail = curl(curve[-1], curve[-1] - curve[-1 - k], tooth_side_end)
     return np.vstack([head, curve, tail])
+
+
+def _min_filter(x, k):
+    pad = np.pad(x, k, mode="edge")
+    return np.min(np.lib.stride_tricks.sliding_window_view(pad, 2 * k + 1), axis=1)
+
+
+def _max_filter(x, k):
+    pad = np.pad(x, k, mode="edge")
+    return np.max(np.lib.stride_tricks.sliding_window_view(pad, 2 * k + 1), axis=1)
+
+
+def lingual_outline(mesh, origin, e_u, e_v, normal, a, m, b, offset, r_wire, bridge_mm=4.0,
+                    step=0.1, min_spacing=2.5, prominence=0.1):
+    """Auto-design: find where the wire touches each tooth.
+
+    The scan is cut at the wire's plane (and a wire radius above and below
+    it). Rays fan out from a point behind the arch (the midline click
+    mirrored across the canine-to-canine line), and along each the wire's
+    centre can come out until it is `offset` from a tooth. Along that outline
+    each tooth is a dip toward the tongue and each embrasure a bump away from
+    it. The wire touches the bottom of each dip: those become its contact
+    points, along with the two canine clicks at the ends. a, m, b are the
+    three clicks in plane coordinates.
+
+    Returns (contact points in order, the outline, warnings).
+    """
+    from .mesh import slice_plane
+    warnings = []
+    # The wire is a cylinder, so a tooth can reach it from anywhere within a
+    # wire radius above or below its centre plane. Cut the scan at several
+    # heights across that band; at height z a tooth must stay
+    # sqrt(r^2 - z^2) away in the plane.
+    pts, rad = [], []
+    for z in np.linspace(-r_wire, r_wire, 9):
+        segs = slice_plane(mesh, origin + z * normal, normal)
+        if not len(segs):
+            continue
+        rel = segs - origin
+        seg2 = np.stack([rel @ e_u, rel @ e_v], axis=-1)
+        reach = np.sqrt(max(r_wire ** 2 - z ** 2, 0.0)) + (offset - r_wire)
+        for p0, p1 in seg2:
+            n = max(1, int(np.ceil(np.linalg.norm(p1 - p0) / 0.1)))
+            t = np.linspace(0, 1, n + 1)[:, None]
+            pts.append(p0 + t * (p1 - p0))
+            rad.append(np.full(n + 1, reach))
+    if not pts:
+        raise SystemExit("the wire's plane does not cut the scan; check the three clicks")
+    P = np.vstack(pts)
+    rad = np.concatenate(rad)
+    lo = np.minimum(a, b) - [6, 6]
+    hi = np.maximum(a, b) + [6, 0]
+    hi[1] = max(hi[1], m[1] + 6)
+    keep = np.all((P >= lo) & (P <= hi), axis=1)
+    P, rad = P[keep], rad[keep]
+
+    chord_mid = (a + b) / 2
+    depth = max(m[1] - chord_mid[1], 3.0)
+    C = chord_mid - np.array([0.0, depth])
+    angA = np.arctan2(*(a - C)[::-1])
+    angB = np.arctan2(*(b - C)[::-1])
+    # a is on the -u side, b on +u: the fan sweeps from angA down to angB through +v
+    span = angA - angB
+    radius = np.linalg.norm(m - C)
+    n_rays = max(50, int(span * radius / step))
+    angs = np.linspace(angA, angB, n_rays)
+    D = np.column_stack([np.cos(angs), np.sin(angs)])
+    rel = P - C
+    along = D @ rel.T                                   # (rays, pts)
+    perp = D[:, 0:1] * rel[:, 1] - D[:, 1:2] * rel[:, 0]
+    hit = (np.abs(perp) < rad) & (along > 0)
+    t = np.where(hit, along - np.sqrt(np.maximum(rad ** 2 - perp ** 2, 0)), np.inf)
+    w = t.min(axis=1)
+    if not np.isfinite(w).any():
+        raise SystemExit("found no teeth along the wire's plane; check the three clicks")
+    finite = np.isfinite(w)
+    idx = np.flatnonzero(finite)
+    h = radius * span / (n_rays - 1)
+    # runs of rays that hit nothing: a tooth missing, or rays past the ends
+    runs, i = [], 0
+    while i < n_rays:
+        if not finite[i]:
+            j = i
+            while j < n_rays and not finite[j]:
+                j += 1
+            runs.append((i, j))
+            i = j
+        else:
+            i += 1
+    if any((j - i) * h > bridge_mm for i, j in runs):
+        warnings.append("a gap wider than the bridge length (missing tooth or diastema?) "
+                        "was spanned with nothing to touch")
+    w = np.interp(np.arange(n_rays), idx, w[idx])
+    outline = C + w[:, None] * D
+
+    # Light smoothing so scan noise does not make false dips.
+    sig = max(1, int(0.3 / h))
+    ker = np.exp(-0.5 * (np.arange(-3 * sig, 3 * sig + 1) / sig) ** 2)
+    ws = np.convolve(np.pad(w, 3 * sig, mode="edge"), ker / ker.sum(), "valid")
+    win = max(1, int(min_spacing / 2 / h))
+    cands = [i for i in range(win, n_rays - win)
+             if ws[i] <= ws[max(0, i - win):i + win + 1].min() + 1e-12]
+    # Keep a dip only if a real bump (an embrasure) separates it from the
+    # previous one; otherwise keep whichever sits further toward the tongue.
+    dips = []
+    for i in cands:
+        if dips and ws[dips[-1]:i + 1].max() - max(ws[dips[-1]], ws[i]) < prominence:
+            if ws[i] < ws[dips[-1]]:
+                dips[-1] = i
+            continue
+        dips.append(i)
+    end_gap = max(1, int(1.5 / h))
+    dips = [i for i in dips if end_gap <= i <= n_rays - 1 - end_gap]
+    contacts = np.vstack([outline[0], outline[dips], outline[-1]])
+    return contacts, outline, warnings
 
 
 def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=None, resolve=True,
@@ -162,7 +278,15 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
             warnings.append(f"{lab}: the flat wire passes {d:+.2f} mm off this contact "
                             "(out of its plane); the contact will be loose or tight")
 
-    if style == "smooth":
+    if style == "auto":
+        if len(picks) != 3 or mesh is None:
+            raise SystemExit("auto design needs exactly three clicks (43, midline, 33) and the scan")
+        found, outline, w2 = lingual_outline(mesh, origin, e_u, e_v, normal, contacts[0],
+                                             contacts[1], contacts[2], r + contact_offset, r)
+        warnings += w2
+        dense = g.catmull_rom(found, samples_per_seg=400)
+        auto_contacts = found
+    elif style == "smooth":
         dense = g.catmull_rom(uv, samples_per_seg=400)
     elif style == "polyline":
         dense = uv
@@ -200,13 +324,18 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
         warnings.append(f"bend direction changes {flips} time(s); expected where the wire "
                         "wraps a canine, and where a tooth sits lingual of its neighbours")
 
-    return Plan(wire=wire, style=style, origin=origin, e_u=e_u, e_v=e_v, normal=normal,
+    contact_labels = [pk.label for pk in picks]
+    if style == "auto":
+        uv = auto_contacts
+        contact_labels = ([picks[0].label] + [f"tooth {i + 1}" for i in range(len(uv) - 2)]
+                          + [picks[-1].label])
+    return Plan(contact_labels=contact_labels, wire=wire, style=style, origin=origin, e_u=e_u, e_v=e_v, normal=normal,
                 labels=[pk.label for pk in picks], contacts_2d=contacts, centers_2d=uv,
                 out_of_plane=off, curve=curve, vertices=vertices, lengths=lengths,
                 turns=turns, path_error=err, warnings=warnings)
 
 
-def push_clear(curve, origin, e_u, e_v, r, mesh, step=0.2, iters=8, sigma=0.6):
+def push_clear(curve, origin, e_u, e_v, r, mesh, step=0.2, iters=20, sigma=0.4):
     """Move the wire out of the teeth wherever it cuts into them.
 
     The curve through the picks is free to bow between them, and across a
@@ -240,12 +369,14 @@ def push_clear(curve, origin, e_u, e_v, r, mesh, step=0.2, iters=8, sigma=0.6):
         ker = np.exp(-0.5 * (x / sigma) ** 2)
         norm = np.convolve(np.ones(len(curve)), ker, "same")
         disp = np.column_stack([np.convolve(disp[:, k], ker, "same") / norm for k in range(2)])
-        # smoothing spreads the push thinner; scale back up so the worst spot clears
+        # Smoothing spreads the push thinner, so where the smoothed push falls
+        # short of what a spot needs, top it up locally (a narrow window) and
+        # let the next pass catch anything left.
         mag = np.linalg.norm(disp, axis=1)
         need = np.interp(s_dense, s, short)
-        hot = need > 0.005
-        if hot.any():
-            disp *= max(1.0, float(np.max(need[hot] / np.maximum(mag[hot], 1e-9))))
+        boost = np.where(need > mag, need / np.maximum(mag, 1e-9), 1.0)
+        boost = np.minimum(boost, 3.0)
+        disp *= np.convolve(np.pad(boost, half, mode="edge"), ker / ker.sum(), "valid")[:, None]
         curve += disp
         total += np.linalg.norm(disp, axis=1)
     return g.resample(curve, 0.02), float(total.max())

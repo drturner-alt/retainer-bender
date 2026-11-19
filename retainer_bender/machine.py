@@ -48,7 +48,7 @@ class Machine:
     clearance_mm: float = 0.15
     min_segment_mm: float = 1.0
     max_segment_mm: float = 6.0
-    max_bend_deg: float = 35.0
+    max_bend_deg: float = 45.0
     path_tolerance_mm: float = 0.04
 
     @classmethod

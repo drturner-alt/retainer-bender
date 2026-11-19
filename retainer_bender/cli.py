@@ -15,14 +15,14 @@ import numpy as np
 
 from .machine import Machine, machine_bends, make_program, simulate
 from .mesh import load_stl, save_stl
-from .outputs import jig_stl, preview_svg, template_svg
+from .outputs import jig_stl, preview_svg, template_svg, wire_stl
 from .planner import (Hooks, Pick, clearance, load_picks, plan_wire, predicted_shape,
                       uncorrected_shape)
 from .springback import Springback
 from .wires import get_wire
 
 
-def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine):
+def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine, occl=None):
     w = plan.wire
     L = [f"Lower 3-3 lingual retainer, {w['label']} ({w['d_mm']:.3f} mm), style {plan.style}",
          f"Wire length {plan.total_length:.2f} mm, {len(plan.turns)} bends",
@@ -32,17 +32,20 @@ def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine):
          "" if sb.calibrated else
          "!! Springback table is a PLACEHOLDER. Calibrate before bending for a patient.",
          "",
-         "Contacts (out of plane = how far the flat wire misses the pick vertically):"]
+         "Clicks (out of plane = how far the flat wire passes above/below the click):"]
     for i, lab in enumerate(plan.labels):
-        row = f"  {lab:<5} out of plane {plan.out_of_plane[i]:+.2f} mm"
-        if clr is not None:
-            row += f"   gap to tooth {clr[2][i]:+.2f} mm"
-        L.append(row)
+        L.append(f"  {lab:<8} out of plane {plan.out_of_plane[i]:+.2f} mm")
+    if clr is not None:
+        L.append("Wire contacts (gap between wire and tooth; 0 = touching):")
+        for lab, gap in zip(plan.contact_labels, clr[2]):
+            L.append(f"  {lab:<8} {gap:+.2f} mm")
     if clr is not None:
         s, d, _ = clr
         worst = float(np.min(d[np.isfinite(d)])) if np.isfinite(d).any() else float("nan")
         L.append(f"Closest approach along the wire: {worst:+.2f} mm "
                  "(negative = wire would press into a tooth)")
+    if occl is not None:
+        L.append(f"Occlusion: nearest upper tooth is {occl:.2f} mm from the wire")
     L += ["", "Bend list, from the first end out (also works for bending by hand):",
           f"  (the machine feeds {machine.lead_in_mm:.1f} mm extra before bend 1; trim it off after)",
           "   #   feed mm   keep deg   command deg   pin touches   arm to"]
@@ -66,7 +69,7 @@ def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine):
 
 
 def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_offset=0.0,
-             hooks=Hooks()):
+             hooks=Hooks(), opposing=None, occlusion_min=0.5):
     out.mkdir(parents=True, exist_ok=True)
     plan = plan_wire(picks, wire, machine, style=style, contact_offset=contact_offset, mesh=mesh,
                      hooks=hooks)
@@ -79,6 +82,14 @@ def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_o
     preview_svg(plan, out / "preview.svg", mesh=mesh, built=built, clearance_info=clr)
     template_svg(plan, out / "template_1to1.svg")
     jig_stl(plan, out / "check_jig.stl")
+    wire_stl(plan, out / "wire.stl")
+    occl = None
+    if opposing is not None:
+        from .geometry import resample
+        from .mesh import signed_distances
+        samples = resample(plan.curve, 0.2)
+        d = signed_distances(plan.to_3d(samples), opposing, search_radius=4.0) - wire["d_mm"] / 2
+        occl = float(np.min(d)) if np.isfinite(d).any() else None
     (out / "plan.json").write_text(json.dumps({
         "wire": wire, "style": plan.style, "length_mm": plan.total_length,
         "labels": plan.labels,
@@ -93,7 +104,10 @@ def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_o
         "steps": steps, "problems": problems, "warnings": plan.warnings,
         "springback": {"source": sb.source, "calibrated": sb.calibrated},
     }, indent=1))
-    text = _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine)
+    if occl is not None and occl < occlusion_min:
+        plan.warnings.append(f"upper teeth come within {occl:.2f} mm of the wire in occlusion "
+                             f"(want at least {occlusion_min:.1f}); move the wire gingivally")
+    text = _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine, occl)
     return plan, problems, text
 
 
@@ -166,12 +180,17 @@ def main(argv=None):
                        help="degrees each canine end curls round (0 = straight ends; default 90)")
         p.add_argument("--hook-radius", type=float, default=2.0,
                        help="radius of the end curls in mm (default 2.0)")
-        p.add_argument("--hook-toward", choices=["tooth", "tongue"], default="tooth")
+        p.add_argument("--hook-toward", choices=["tongue", "tooth"], default="tongue",
+                       help="tongue (default): the ends curl back in toward the midline")
 
     p = sub.add_parser("plan", help="plan a wire from picked points")
     p.add_argument("picks", type=Path)
     p.add_argument("--scan", type=Path, help="lower scan STL, for clearance checks and the preview")
-    p.add_argument("--style", choices=["smooth", "polyline"], default="smooth")
+    p.add_argument("--opposing", type=Path,
+                   help="upper scan STL in occlusion (as iTero exports it), for the occlusion check")
+    p.add_argument("--style", choices=["auto", "smooth", "polyline"], default=None,
+                   help="auto: design from 3 clicks (43, midline, 33) and the scan; "
+                        "smooth/polyline: through every click. Default: auto for 3 clicks")
     p.add_argument("--contact-offset", type=float, default=0.0,
                    help="mm to stand the wire off the teeth (negative presses it in)")
     hook_args(p)
@@ -180,6 +199,7 @@ def main(argv=None):
     p = sub.add_parser("demo", help="plan a wire for a built-in synthetic arch")
     p.add_argument("--lingual", type=float, default=0.3,
                    help="mm to set tooth 41 lingual of its neighbours (default 0.3)")
+    p.add_argument("--auto", action="store_true", help="use the 3-click auto design")
     hook_args(p)
     common(p)
 
@@ -224,12 +244,19 @@ def main(argv=None):
         a.out.mkdir(parents=True, exist_ok=True)
         save_stl(a.out / "synthetic_lower.stl", tris)
         (a.out / "picks.json").write_text(json.dumps({"units": "mm", "points": picks}, indent=1))
+        if a.auto:
+            picks = [x for x in picks if x["label"] in ("43m", "41", "33m")]
+            (a.out / "picks.json").write_text(json.dumps({"units": "mm", "points": picks}, indent=1))
         pk = [Pick(np.array(x["p"]), np.array(x["n"]), x["label"]) for x in picks]
-        _, problems, text = run_plan(pk, wire, machine, sb, a.out, mesh=tris, hooks=hooks)
+        _, problems, text = run_plan(pk, wire, machine, sb, a.out, mesh=tris, hooks=hooks,
+                                     style="auto" if a.auto else "smooth")
     else:
         mesh = load_stl(a.scan) if a.scan else None
-        _, problems, text = run_plan(load_picks(a.picks), wire, machine, sb, a.out, mesh=mesh,
-                                     style=a.style, contact_offset=a.contact_offset, hooks=hooks)
+        picks = load_picks(a.picks)
+        style = a.style or ("auto" if len(picks) == 3 and mesh is not None else "smooth")
+        _, problems, text = run_plan(picks, wire, machine, sb, a.out, mesh=mesh,
+                                     style=style, contact_offset=a.contact_offset, hooks=hooks,
+                                     opposing=load_stl(a.opposing) if a.opposing else None)
     print(text)
     return 1 if problems else 0
 
