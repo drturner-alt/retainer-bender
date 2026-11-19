@@ -5,7 +5,8 @@
 //
 //   HOME          home feed stage (to its rear switch) and arm (to its switch)
 //   FEED <mm>     move the feed stage forward by mm (relative)
-//   ARM <deg>     move the arm to an absolute angle; 0 = neutral
+//   ARM <deg>     move the arm to an absolute angle; 0 = pin straight ahead
+//   PIN UP|DOWN   raise or lower the bend pin (hobby servo on the lift ring)
 //   JOG <mm>      like FEED but allowed backwards, for loading wire
 //   STATUS        print positions
 //   OFF           disable the motors (so the arm can be turned by hand)
@@ -15,6 +16,7 @@
 // stops the program and makes the firmware refuse moves until HOME.
 
 #include <AccelStepper.h>
+#include <Servo.h>
 
 // ---- pins (change to match your wiring) ----
 const int FEED_STEP = 2, FEED_DIR = 3;
@@ -23,6 +25,7 @@ const int ENABLE_PIN = 8;          // shared, active LOW
 const int FEED_HOME_SW = 9;        // rear end of the stage, to GND when pressed
 const int ARM_HOME_SW = 10;        // to GND when pressed
 const int ESTOP_PIN = 11;          // normally-closed button to GND; open = stop
+const int LIFT_SERVO = 12;         // servo that raises the lift ring under the arm
 
 // ---- mechanics (calibrate these) ----
 // Feed: lead screw pitch 2 mm (T8x2) direct, 200 step motor, 16 microsteps.
@@ -31,16 +34,21 @@ const float FEED_TRAVEL_MM = 120.0;
 const bool FEED_INVERT = false;
 // Arm: 200 step motor, 16 microsteps, 10:1 planetary gearbox.
 const float ARM_STEPS_PER_DEG = 200.0 * 16 * 10 / 360.0;
-const float ARM_LIMIT_DEG = 100.0;
+const float ARM_LIMIT_DEG = 150.0;
 const bool ARM_INVERT = false;
-// After the arm switch trips, how far to move to reach neutral (deg).
+// After the arm switch trips, how far to move to reach 0 (pin straight ahead).
 const float ARM_HOME_TO_NEUTRAL_DEG = -45.0;
+// Lift servo positions (servo degrees) and time to let it get there.
+const int LIFT_DOWN_DEG = 20, LIFT_UP_DEG = 75;
+const unsigned long LIFT_SETTLE_MS = 250;
 
 const float FEED_SPEED_MM_S = 8.0, FEED_ACCEL_MM_S2 = 40.0;
 const float ARM_SPEED_DEG_S = 90.0, ARM_ACCEL_DEG_S2 = 400.0;
 
 AccelStepper feed(AccelStepper::DRIVER, FEED_STEP, FEED_DIR);
 AccelStepper arm(AccelStepper::DRIVER, ARM_STEP, ARM_DIR);
+Servo lift;
+bool pinUp = true;          // unknown at power-up: treat as up until lowered
 bool homed = false;
 bool stopped = false;
 String line;
@@ -72,6 +80,12 @@ bool homeAxis(AccelStepper &m, int sw, long dir, float speed) {
 
 void reply(const String &s) { Serial.println(s); }
 
+void setPin(bool up) {
+  lift.write(up ? LIFT_UP_DEG : LIFT_DOWN_DEG);
+  delay(LIFT_SETTLE_MS);
+  pinUp = up;
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(ENABLE_PIN, OUTPUT); digitalWrite(ENABLE_PIN, LOW);
@@ -84,6 +98,8 @@ void setup() {
   feed.setAcceleration(FEED_ACCEL_MM_S2 * FEED_STEPS_PER_MM);
   arm.setMaxSpeed(ARM_SPEED_DEG_S * ARM_STEPS_PER_DEG);
   arm.setAcceleration(ARM_ACCEL_DEG_S2 * ARM_STEPS_PER_DEG);
+  lift.attach(LIFT_SERVO);
+  setPin(false);
   reply("retainer-bender ready");
 }
 
@@ -97,6 +113,7 @@ void handle(String cmd) {
   if (op == "STATUS") {
     Serial.print("feed_mm "); Serial.print(feed.currentPosition() / FEED_STEPS_PER_MM, 3);
     Serial.print(" arm_deg "); Serial.print(arm.currentPosition() / ARM_STEPS_PER_DEG, 2);
+    Serial.print(pinUp ? " pin-up" : " pin-down");
     Serial.print(homed ? " homed" : " not-homed");
     Serial.println(estop() ? " ESTOP" : "");
     reply("ok"); return;
@@ -104,9 +121,17 @@ void handle(String cmd) {
   if (op == "OFF") { digitalWrite(ENABLE_PIN, HIGH); homed = false; reply("ok"); return; }
   if (estop()) { reply("error: e-stop is open"); return; }
 
+  if (op == "PIN") {
+    String arg = sp < 0 ? "" : cmd.substring(sp + 1);
+    arg.trim(); arg.toUpperCase();
+    if (arg == "UP") { setPin(true); reply("ok"); return; }
+    if (arg == "DOWN") { setPin(false); reply("ok"); return; }
+    reply("error: PIN UP or PIN DOWN"); return;
+  }
   if (op == "HOME") {
     digitalWrite(ENABLE_PIN, LOW);
     stopped = false;
+    setPin(false);
     if (!homeAxis(arm, ARM_HOME_SW, 1, 20 * ARM_STEPS_PER_DEG)) { reply("error: e-stop while homing"); return; }
     arm.moveTo(lround(ARM_HOME_TO_NEUTRAL_DEG * ARM_STEPS_PER_DEG));
     if (!runTo(arm)) { reply("error: e-stop while homing"); return; }
@@ -121,7 +146,7 @@ void handle(String cmd) {
     if (op == "FEED" && val < 0) { reply("error: FEED must be positive; use JOG"); return; }
     float target = feed.currentPosition() / FEED_STEPS_PER_MM + val;
     if (target < -0.01 || target > FEED_TRAVEL_MM) { reply("error: past stage travel"); return; }
-    if (fabs(arm.currentPosition()) > 2) { reply("error: arm not at neutral"); return; }
+    if (pinUp) { reply("error: pin is up; send PIN DOWN first"); return; }
     feed.moveTo(lround(target * FEED_STEPS_PER_MM));
     if (!runTo(feed)) { reply("error: e-stop"); return; }
     reply("ok"); return;

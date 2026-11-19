@@ -73,7 +73,44 @@ class Plan:
         return float(self.lengths.sum())
 
 
-def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=None, resolve=True):
+@dataclass
+class Hooks:
+    """Retention curls at the two canine ends, in the wire's plane."""
+    angle_deg: float = 90.0     # how far the end curls round; 0 = straight ends
+    radius_mm: float = 2.0      # radius of the curl, to the wire centre
+    toward: str = "tooth"       # "tooth" curls onto the canine; "tongue" the other way
+
+
+def add_hooks(curve, hooks, tooth_side_start, tooth_side_end, step=0.02):
+    """Extend both ends of a 2D curve with circular curls.
+
+    tooth_side_*: 2D direction from the wire toward the canine at each end.
+    """
+    if not hooks or hooks.angle_deg <= 0:
+        return curve
+    phi = np.radians(hooks.angle_deg)
+    R = hooks.radius_mm
+    n = max(2, int(np.ceil(R * phi / step)))
+
+    def curl(end, outward, side):
+        outward = outward / np.linalg.norm(outward)
+        left = np.array([-outward[1], outward[0]])
+        sgn = 1.0 if np.dot(left, side) >= 0 else -1.0
+        if hooks.toward == "tongue":
+            sgn = -sgn
+        centre = end + sgn * R * left
+        a0 = np.arctan2(*(end - centre)[::-1])
+        a = a0 + sgn * np.linspace(0, phi, n + 1)[1:]
+        return centre + R * np.column_stack([np.cos(a), np.sin(a)])
+
+    k = max(2, int(0.3 / step))
+    head = curl(curve[0], curve[0] - curve[k], tooth_side_start)[::-1]
+    tail = curl(curve[-1], curve[-1] - curve[-1 - k], tooth_side_end)
+    return np.vstack([head, curve, tail])
+
+
+def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=None, resolve=True,
+              hooks=None):
     r = wire["d_mm"] / 2
     warnings = []
 
@@ -132,6 +169,15 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
     else:
         raise SystemExit(f"unknown style {style!r}")
     curve = g.resample(dense, 0.02)
+    if hooks and hooks.angle_deg > 0:
+        if have_normals:
+            sides = [-np.array([normals[i] @ e_u, normals[i] @ e_v]) for i in (0, -1)]
+        else:
+            sides = [np.array([0.0, 1.0])] * 2
+        curve = g.resample(add_hooks(curve, hooks, *sides), 0.02)
+        if hooks.radius_mm < machine.min_segment_mm / np.radians(machine.max_bend_deg):
+            warnings.append(f"a {hooks.radius_mm} mm hook radius needs bends over "
+                            f"{machine.max_bend_deg:.0f} deg at {machine.min_segment_mm} mm spacing")
     if mesh is not None and resolve:
         curve, pushed = push_clear(curve, origin, e_u, e_v, r, mesh)
         if pushed > 0.005:

@@ -1,9 +1,9 @@
 # retainer-bender
 
 Plans and bends flat (2D) lower 3-3 lingual retainer wires in **.028"** or
-**.032"** stainless steel from an iTero scan. The wire is bonded to the canines
-and arcs across to touch each incisor about two-thirds of the way up its
-lingual surface.
+**.032"** stainless steel from an iTero scan. The wire is bonded to the canines,
+with a retention curl at each end, and arcs across to touch each incisor about
+two-thirds of the way up its lingual surface.
 
 ```
 iTero lower STL ──► picker (browser) ──► picks.json ──► rbend plan ──► program.txt ──► rbend send ──► bender
@@ -57,8 +57,8 @@ and plans a .032" wire for it. Open `demo/preview.svg` and read
    ```bash
    rbend send case123/program.txt --port /dev/ttyACM0
    ```
-   Load the wire tip flush with the die before sending. Cut at the die
-   when it finishes.
+   Load the wire tip flush with the die before sending. When it finishes, cut
+   at the die and snip the 6 mm lead-in off the end that came out first.
 5. **Check the result.** Lay the wire on the printed `template_1to1.svg`,
    drop it into the printed `check_jig.stl`, and try it on the printed model.
 
@@ -71,14 +71,19 @@ and plans a .032" wire for it. Open `demo/preview.svg` and read
   one that sits well above or below the rest.
 - A smooth curve is run through the centres. Wherever it would cut into a tooth
   (across a convex canine, for example), it is pushed out just clear.
+- A curl is added at each end, 90° at 2 mm radius by default. It turns toward
+  the canine, so it sits under the composite pad. Set it with `--hook-angle`
+  and `--hook-radius`, turn it toward the tongue with `--hook-toward tongue`,
+  or leave it off with `--hook-angle 0`.
 - The curve is replaced by straight pieces at least 1 mm long that stay within
   0.04 mm of it. That gives a feed length for each piece and a bend angle at
-  each joint, usually about 12–16 bends of 3–15°.
-- Each bend angle is converted to an arm angle. The conversion adds the angle
-  at which a pin first touches the wire, and an over-bend from that wire's
-  springback table.
-- The program is then simulated on the machine: feed travel, arm reach, and
-  whether the bent wire would hit a pin or the guide.
+  each joint, usually about 20 bends: 3–15° along the arc and 20–30° in the curls.
+- The program is simulated on the machine bend by bend. For each bend it
+  finds where to raise the pin clear of the wire already out (curls
+  included) and where the pin first touches it. It then turns the arm past
+  that point by the target angle plus the over-bend from the wire's
+  springback table. It also checks feed travel, arm reach, and that the free
+  end never swings into the guide.
 
 `--style polyline` makes straight runs between picks instead of a smooth curve.
 `--contact-offset 0.05` stands the wire 0.05 mm off the teeth, and a negative

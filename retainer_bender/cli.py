@@ -13,16 +13,16 @@ from pathlib import Path
 
 import numpy as np
 
-from .machine import Machine, check_program, machine_bends, make_program
+from .machine import Machine, machine_bends, make_program, simulate
 from .mesh import load_stl, save_stl
 from .outputs import jig_stl, preview_svg, template_svg
-from .planner import (Pick, clearance, load_picks, plan_wire, predicted_shape,
+from .planner import (Hooks, Pick, clearance, load_picks, plan_wire, predicted_shape,
                       uncorrected_shape)
 from .springback import Springback
 from .wires import get_wire
 
 
-def _report(plan, steps, problems, sb, built_err, raw_err, clr, out):
+def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine):
     w = plan.wire
     L = [f"Lower 3-3 lingual retainer, {w['label']} ({w['d_mm']:.3f} mm), style {plan.style}",
          f"Wire length {plan.total_length:.2f} mm, {len(plan.turns)} bends",
@@ -43,17 +43,21 @@ def _report(plan, steps, problems, sb, built_err, raw_err, clr, out):
         worst = float(np.min(d[np.isfinite(d)])) if np.isfinite(d).any() else float("nan")
         L.append(f"Closest approach along the wire: {worst:+.2f} mm "
                  "(negative = wire would press into a tooth)")
-    L += ["", "Bend list (also good for bending by hand from the tip end):",
-          "   #   feed mm   bend deg   command deg   arm deg"]
+    L += ["", "Bend list, from the first end out (also works for bending by hand):",
+          f"  (the machine feeds {machine.lead_in_mm:.1f} mm extra before bend 1; trim it off after)",
+          "   #   feed mm   keep deg   command deg   pin touches   arm to"]
     k = 0
+    feeds = [st["mm"] for st in steps if st["op"] == "feed"]
+    feeds[0] -= machine.lead_in_mm
     for st in steps:
-        if st["op"] == "feed":
-            feed = st["mm"]
-        else:
-            k += 1
-            L.append(f"  {k:>2}   {feed:7.2f}   {st['target_deg']:+8.2f}   "
-                     f"{st['command_deg']:11.2f}   {st['arm_deg']:+7.2f}")
-    L.append(f"  last  {steps[-1]['mm']:7.2f}   (then cut)")
+        if st["op"] != "bend":
+            continue
+        row = f"  {k + 1:>2}   {feeds[k]:7.2f}   {st['target_deg']:+8.2f}   {st['command_deg']:+11.2f}"
+        if "arm_deg" in st:
+            row += f"   {st['contact_deg']:+10.2f}   {st['arm_deg']:+7.2f}"
+        L.append(row)
+        k += 1
+    L.append(f"  last  {feeds[-1]:7.2f}   (then cut)")
     L += ["", "Warnings:"] + [f"  - {x}" for x in plan.warnings] if plan.warnings else []
     L += ["", "Machine checks:"] + ([f"  - {x}" for x in problems] if problems else ["  all passed"])
     text = "\n".join(L) + "\n"
@@ -61,13 +65,14 @@ def _report(plan, steps, problems, sb, built_err, raw_err, clr, out):
     return text
 
 
-def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_offset=0.0):
+def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_offset=0.0,
+             hooks=Hooks()):
     out.mkdir(parents=True, exist_ok=True)
-    plan = plan_wire(picks, wire, machine, style=style, contact_offset=contact_offset, mesh=mesh)
+    plan = plan_wire(picks, wire, machine, style=style, contact_offset=contact_offset, mesh=mesh,
+                     hooks=hooks)
     built, built_err = predicted_shape(plan, sb)
     _, raw_err = uncorrected_shape(plan, sb)
-    lines, steps = make_program(plan.lengths, plan.turns, wire, machine, sb)
-    problems = check_program(plan.lengths, plan.turns, wire, machine, sb)
+    lines, steps, problems = make_program(plan.lengths, plan.turns, wire, machine, sb)
     clr = clearance(plan, mesh) if mesh is not None else None
 
     (out / "program.txt").write_text("\n".join(lines) + "\n")
@@ -88,7 +93,7 @@ def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_o
         "steps": steps, "problems": problems, "warnings": plan.warnings,
         "springback": {"source": sb.source, "calibrated": sb.calibrated},
     }, indent=1))
-    text = _report(plan, steps, problems, sb, built_err, raw_err, clr, out)
+    text = _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine)
     return plan, problems, text
 
 
@@ -96,26 +101,22 @@ def calibration_program(wire, machine, sb, out, angles=(4, 6, 8, 10, 12, 15, 20,
     """One test wire: straight pieces with alternating bends between them.
 
     Alternating the direction keeps the wire from curling into the machine
-    and calibrates both pins. Measure each angle and enter the results in
+    and checks both directions. Measure each angle and enter the results in
     calibration_sheet.csv, then run `rbend fit-springback`.
     """
     out.mkdir(parents=True, exist_ok=True)
-    contact = machine.contact_deg(wire["d_mm"])
+    cmds = [a if k % 2 == 0 else -a for k, a in enumerate(angles)]
+    kept = [np.sign(c) * sb.kept(abs(c)) for c in cmds]
+    lengths = [seg] * (len(angles) + 1)
+    lines, _, problems = simulate(lengths, cmds, kept, wire, machine,
+                                  [f"; test bend {k + 1}" for k in range(len(angles))])
+    if problems:
+        raise SystemExit("calibration program won't run on this machine:\n  " + "\n  ".join(problems))
     lines = ["; retainer-bender springback calibration",
-             f"; wire {wire['label']}; arm angle = contact {contact:.2f} + commanded",
-             "; load: tip flush with the die exit, arm at neutral",
-             f"FEED {seg:.3f}"]
+             f"; wire {wire['label']}; each ARM line turns past first contact by the commanded angle",
+             "; load: tip flush with the die exit, pin down"] + lines
     rows = ["bend,direction,commanded_deg,measured_deg"]
-    for k, a in enumerate(angles):
-        sgn = 1 if k % 2 == 0 else -1
-        lines += [f"ARM {sgn * (contact + a):.2f}    ; test bend {k + 1}: commanded {a} deg",
-                  "ARM 0", f"FEED {seg:.3f}"]
-        rows.append(f"{k + 1},{'+' if sgn > 0 else '-'},{a},")
-    lines.append("; done: cut at the die exit")
-    total = seg * (len(angles) + 1)
-    if total > machine.feed_travel_mm:
-        raise SystemExit(f"calibration wire needs {total:.0f} mm, stage travels "
-                         f"{machine.feed_travel_mm:.0f}; use fewer angles or shorter pieces")
+    rows += [f"{k + 1},{'+' if c > 0 else '-'},{abs(c)}," for k, c in enumerate(cmds)]
     (out / "calibration_program.txt").write_text("\n".join(lines) + "\n")
     (out / "calibration_sheet.csv").write_text("\n".join(rows) + "\n")
     return lines
@@ -160,17 +161,26 @@ def main(argv=None):
         p.add_argument("--springback", help="springback table json (default: placeholder for the wire)")
         p.add_argument("-o", "--out", type=Path, required=True)
 
+    def hook_args(p):
+        p.add_argument("--hook-angle", type=float, default=90.0,
+                       help="degrees each canine end curls round (0 = straight ends; default 90)")
+        p.add_argument("--hook-radius", type=float, default=2.0,
+                       help="radius of the end curls in mm (default 2.0)")
+        p.add_argument("--hook-toward", choices=["tooth", "tongue"], default="tooth")
+
     p = sub.add_parser("plan", help="plan a wire from picked points")
     p.add_argument("picks", type=Path)
     p.add_argument("--scan", type=Path, help="lower scan STL, for clearance checks and the preview")
     p.add_argument("--style", choices=["smooth", "polyline"], default="smooth")
     p.add_argument("--contact-offset", type=float, default=0.0,
                    help="mm to stand the wire off the teeth (negative presses it in)")
+    hook_args(p)
     common(p)
 
     p = sub.add_parser("demo", help="plan a wire for a built-in synthetic arch")
     p.add_argument("--lingual", type=float, default=0.3,
                    help="mm to set tooth 41 lingual of its neighbours (default 0.3)")
+    hook_args(p)
     common(p)
 
     p = sub.add_parser("calibrate", help="write a springback test program")
@@ -207,6 +217,7 @@ def main(argv=None):
         print(f"wrote {a.out / 'calibration_program.txt'} and calibration_sheet.csv")
         return 0
 
+    hooks = Hooks(a.hook_angle, a.hook_radius, a.hook_toward) if a.cmd in ("plan", "demo") else None
     if a.cmd == "demo":
         from .synthetic import make_case
         tris, picks = make_case({"41": a.lingual} if a.lingual else None)
@@ -214,11 +225,11 @@ def main(argv=None):
         save_stl(a.out / "synthetic_lower.stl", tris)
         (a.out / "picks.json").write_text(json.dumps({"units": "mm", "points": picks}, indent=1))
         pk = [Pick(np.array(x["p"]), np.array(x["n"]), x["label"]) for x in picks]
-        _, problems, text = run_plan(pk, wire, machine, sb, a.out, mesh=tris)
+        _, problems, text = run_plan(pk, wire, machine, sb, a.out, mesh=tris, hooks=hooks)
     else:
         mesh = load_stl(a.scan) if a.scan else None
         _, problems, text = run_plan(load_picks(a.picks), wire, machine, sb, a.out, mesh=mesh,
-                                     style=a.style, contact_offset=a.contact_offset)
+                                     style=a.style, contact_offset=a.contact_offset, hooks=hooks)
     print(text)
     return 1 if problems else 0
 

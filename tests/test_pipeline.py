@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 
 from retainer_bender.cli import calibration_program, fit_springback, run_plan
-from retainer_bender.machine import Machine, free_wire, machine_bends
+from retainer_bender.machine import Machine, free_wire, machine_bends, make_program
 from retainer_bender.mesh import load_stl, save_stl, signed_volume
-from retainer_bender.planner import Pick
+from retainer_bender.planner import Hooks, Pick
 from retainer_bender.springback import Springback
 from retainer_bender.synthetic import make_case
 from retainer_bender.wires import get_wire
@@ -94,3 +94,39 @@ def test_calibration_and_fit(tmp_path, wire):
     sb = Springback.load(out)
     assert sb.calibrated
     assert abs(sb.kept(sb.command_for(10)) - 10) < 1e-6
+
+
+def test_hooks_curl_both_ends_and_still_build(tmp_path, wire):
+    tris, picks = make_case()
+    pk = [Pick(np.array(p["p"]), np.array(p["n"]), p["label"]) for p in picks]
+    sb = Springback.default_for(wire["key"])
+    plain, _, _ = run_plan(pk, wire, Machine.load(), sb, tmp_path / "a", mesh=tris, hooks=Hooks(0))
+    hooked, problems, _ = run_plan(pk, wire, Machine.load(), sb, tmp_path / "b", mesh=tris,
+                                   hooks=Hooks(90, 2.0))
+    assert problems == []
+    assert hooked.total_length > plain.total_length + 2 * 2.5
+    T = np.degrees(hooked.turns)
+    s = np.cumsum(hooked.lengths)[:-1]
+    head = T[s < 5.0].sum()
+    tail = T[s > hooked.total_length - 5.0].sum()
+    assert abs(head) > 70 and abs(tail) > 70
+
+
+def test_program_raises_and_lowers_pin_around_every_bend(wire):
+    m = Machine.load()
+    sb = Springback.default_for(wire["key"])
+    lines, steps, problems = make_program(np.array([3.0, 2.0, 2.0]), np.radians([10, -12]),
+                                          wire, m, sb)
+    assert problems == []
+    cmds = [l.split(";")[0].strip() for l in lines if not l.startswith(";")]
+    assert cmds[0] == f"FEED {3.0 + m.lead_in_mm:.3f}"
+    # every FEED happens with the pin down
+    up = False
+    for c in cmds:
+        if c == "PIN UP":
+            up = True
+        elif c == "PIN DOWN":
+            up = False
+        elif c.startswith("FEED"):
+            assert not up
+    assert cmds.count("PIN UP") == 2

@@ -1,17 +1,26 @@
 # Hardware: 2D bender for .028" / .032" stainless retainer wire
 
-Version 1 makes flat lower 3-3 retainers from **straight lengths** of wire,
-loaded by hand and cut by hand. Two motors: one pushes the wire out, one turns
-the bend arm. Everything that carries bending load is steel; everything else
-can be printed.
+Version 1 makes flat lower 3-3 retainers, with a retention curl at each canine
+end, from **straight lengths** of wire loaded by hand and cut by hand. Two
+motors do the work: one pushes the wire out, and one turns the bend arm. A
+hobby servo raises and lowers the bend pin. Everything that carries bending
+load is steel; everything else can be printed.
 
 ```
-   feed stage (lead screw)            guide tube        die    bend arm (under the deck,
-   ┌──────────────────────────┐   ════════════════════╗ ◉ ◉   turns about the die exit)
-   │ pin vise ▶ clamps wire   │ ─────── wire ─────────╫──●──────────▶ free end
-   └──────────────────────────┘   ════════════════════╝ ◉ ◉        ● = pins on the arm
-          NEMA 17                                       die pins
+   feed stage (lead screw)            guide tube       die     bend arm turns about the die exit;
+   ┌──────────────────────────┐   ════════════════════╗ ◉      its one pin drops below the deck
+   │ pin vise ▶ clamps wire   │ ─────── wire ─────────╫────────────▶ free end
+   └──────────────────────────┘   ════════════════════╝ ◉   ●  ← bend pin, raised only to bend
+          NEMA 17                                     die pins
 ```
+
+Why one pin that drops, and not two fixed pins either side of the wire: the end
+curls need several 20–30° bends 1 mm apart. That folds the wire right back
+beside the die, where a fixed second pin would sit. Spread the fixed pins wide
+enough to miss the curl and the far pin swings round into the guide. With a
+dropping pin, nothing is near the wire while it feeds. The software finds where
+the raised pin will first touch the (possibly curled) wire on each bend, and
+checks that it can be raised clear.
 
 ## Why these sizes
 
@@ -58,32 +67,47 @@ both pins into a small steel or aluminium plate. Drill the holes on a drill
 press with a printed drilling jig, or have a machine shop do this one part.
 Tie that plate rigidly to the same base plate as the arm's motor.
 
-## 3. Bend arm
+## 3. Bend arm and lifting pin
 
 | Part | Spec | Approx. |
 |---|---|---|
 | NEMA 23 stepper + 10:1 planetary gearbox | ≥ 1 N·m continuous at the output, low backlash (≤ 15 arcmin) | $90–150 |
-| Arm hub | Steel/aluminium flange coupling or shaft collar to fit the gearbox shaft | $10 |
-| Arm pins | Two hardened 3 mm dowel pins | $5 |
-| Home switch | Micro switch or optical endstop, triggered by a flag on the hub | $2 |
+| Arm | Steel or aluminium disc on the gearbox shaft, with a bronze or steel bushing for the pin | $10–20 |
+| Bend pin | Hardened 3 mm dowel pin, about 20 mm long, sliding in the bushing | $3 |
+| Lift ring | A printed (PTFE-faced) or aluminium ring around the shaft, under the arm, that does not turn | — |
+| Lift servo | Metal-gear micro servo (MG90S or similar), fixed to the frame, lifting the ring through a short lever | $8 |
+| Home switch | Micro switch or optical endstop, triggered by a flag on the arm | $2 |
 
+How it fits together:
 - The gearbox shaft is vertical and sits **directly under the die exit**.
-- The two pins stand up from the hub at radius **6 mm** from the shaft, at
-  **±60°** from the direction the wire travels, one on each side of the wire.
-- The pins stick up through a curved slot in the deck, just high enough to
-  catch the wire.
-- Turning the arm brings one pin against the wire and bends the free end
-  around the die pin on that side.
+- The pin slides vertically in a bushing in the arm, **5 mm** from the shaft
+  centre.
+- Its lower end rests on the lift ring. The ring doesn't rotate, so the pin
+  slides around on it as the arm turns, and no wires have to turn with the arm.
+- Servo up: the ring lifts and the pin rises about 1.5 mm above the deck,
+  through a slot that runs around the die. Servo down: the pin drops below the
+  deck and the arm can swing anywhere under the wire.
+- The bending load goes sideways into the bushing and the arm. Neither the
+  ring nor the servo carries it.
+
+**Bend sequence**, done automatically:
+1. Swing the arm (pin down) to the near side of the wire.
+2. Pin up.
+3. Turn until the pin touches the wire, then on by the commanded angle.
+4. Pin down.
+
+Because the pin is 5 mm out, at least 5 mm of wire has to be out of the die
+before the first bend. The program feeds a 6 mm straight lead-in (set by
+`lead_in_mm`); snip it off the first end after bending.
 
 These numbers are in `config/machine.json` (`arm_radius_mm`,
-`pin_angle_deg`, `pin_diameter_mm`). From them, the software works out where
-the pins touch the wire, and it checks every program so the bent wire never
-runs into a pin or back into the guide.
+`pin_diameter_mm`, `lead_in_mm`). The software uses them to simulate every
+program, so a program that can't be made is refused before it reaches the
+machine.
 
-**Keep the guide slim behind the die.** As the wire curls into a U, the
-non-pushing pin swings round to about 100°, which is behind the die exit. The
-tube and die plate must fit within ±3 mm of the wire line for the first 6 mm
-behind the exit (`body_halfwidth_mm`).
+**Keep the guide slim behind the die.** The free end curls round as the wire
+is bent. Keep the tube and die plate within ±3 mm of the wire line for the
+first 6 mm behind the exit (`body_halfwidth_mm`).
 
 ## 4. Frame and printed parts
 
@@ -91,7 +115,7 @@ behind the exit (`body_halfwidth_mm`).
   the die/arm area. The die and the arm motor must share one stiff plate.
 - Print brackets, the pin-vise mount, the tube clamps, the deck and
   covers in PETG or PA-CF, with 5+ walls and 40%+ infill.
-- **Don't print** the die, the arm pins, or anything between the die and the
+- **Don't print** the die, the bend pin, the arm, or anything between the die and the
   arm motor that carries load.
 
 ## 5. Electronics
@@ -103,12 +127,13 @@ behind the exit (`body_halfwidth_mm`).
 | Arm driver | DM542 / DM556 external driver, 16 microsteps | $25 |
 | Power | 24 V, 5 A supply | $20 |
 | E-stop | Red mushroom button (normally closed) that cuts the motor supply *and* signals the controller | $10 |
+| 5 V supply for the servo | 5 V 2 A buck converter from the 24 V supply | $5 |
 
-The pins are set at the top of `firmware/retainer_bender/retainer_bender.ino`.
+Controller pin numbers are set at the top of `firmware/retainer_bender/retainer_bender.ino`.
 So are steps/mm, steps/degree, direction inversion, and the offset from the
 arm's home switch to neutral.
 
-Rough total: **$300–550** plus the die plate.
+Rough total: **$320–580** plus the die plate and arm.
 
 ## 6. Bring-up
 
@@ -116,12 +141,16 @@ Rough total: **$300–550** plus the die plate.
    and `STATUS`.
 2. **Check the feed.** Send `FEED 50` and measure how far the carriage moved
    with calipers. Correct `FEED_STEPS_PER_MM`.
-3. **Set neutral.** Turn the arm to neutral (pins symmetric about the wire),
-   then set `ARM_HOME_TO_NEUTRAL_DEG` so that `HOME` ends there.
-4. **Check the bend direction.** With a test wire, `ARM 50` should bend the free
-   end counter-clockwise seen from above. If it bends the other way, flip
-   `ARM_INVERT`.
-5. **Calibrate springback** (below) for each wire size.
+3. **Set zero.** With the pin down, `HOME` should leave the pin pointing
+   straight down the wire line (0°). Adjust `ARM_HOME_TO_NEUTRAL_DEG` until it
+   does.
+4. **Set the lift.** Adjust `LIFT_DOWN_DEG` and `LIFT_UP_DEG` until `PIN DOWN`
+   puts the pin top 0.5 mm below the deck and `PIN UP` raises it 1.5 mm above.
+5. **Check the bend direction.** Feed 10 mm of test wire, then send `ARM -40`,
+   `PIN UP`, `ARM 10`. The pin should come up from below the wire (seen from
+   above, with the wire travelling left to right) and bend the end
+   counter-clockwise. If it bends the other way, flip `ARM_INVERT`.
+6. **Calibrate springback** (below) for each wire size.
 
 ## 7. Springback calibration
 
@@ -144,6 +173,6 @@ Repeat for every new wire lot, and whenever you change the pins or die.
 
 ## Safety
 
-The arm makes about 1 N·m and the pins pinch. Keep fingers off the deck
-whenever the machine is powered. Use `OFF` before reaching in to load wire,
+The arm makes about 1 N·m and the pin pinches. Keep fingers off the deck
+whenever the machine is powered. Send `PIN DOWN` then `OFF` before reaching in to load wire,
 and wire the E-stop so it cuts motor power, not just the signal.

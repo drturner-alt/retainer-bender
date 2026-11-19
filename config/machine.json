@@ -1,14 +1,14 @@
 {
-  "_doc": "Bend head and feed geometry. See hardware/README.md for what each number means. Lengths in mm, angles in degrees.",
+  "_doc": "Bend head and feed geometry; see hardware/README.md. Lengths in mm, angles in degrees.",
 
   "feed_travel_mm": 120.0,
-  "lead_in_mm": 0.0,
+  "lead_in_mm": 6.0,
 
-  "arm_radius_mm": 6.0,
-  "pin_angle_deg": 60.0,
+  "arm_radius_mm": 5.0,
   "pin_diameter_mm": 3.0,
+  "approach_margin_deg": 6.0,
   "contact_trim_deg": 0.0,
-  "arm_max_deg": 100.0,
+  "arm_max_deg": 150.0,
 
   "body_start_mm": 0.5,
   "body_halfwidth_mm": 3.0,

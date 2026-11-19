@@ -34,7 +34,7 @@ def send(path, port, baud=115200, home=True, dry_run=False, timeout=60.0):
                     break
                 if reply.startswith("error"):
                     print(f"{line:<20} {reply}", file=sys.stderr)
-                    ser.write(b"ARM 0\n")
+                    ser.write(b"PIN DOWN\n")
                     return 1
                 if reply:
                     print(f"  {reply}")
