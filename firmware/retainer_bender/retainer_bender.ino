@@ -29,7 +29,7 @@ const int LIFT_SERVO = 12;         // servo that raises the lift ring under the 
 
 // ---- mechanics (calibrate these) ----
 // Feed: lead screw pitch 2 mm (T8x2) direct, 200 step motor, 16 microsteps.
-const float FEED_STEPS_PER_MM = 200.0 * 16 / 2.0;
+const float FEED_STEPS_PER_MM = 200.0 * 16 / 2.0;  // = 1600 for a 2 mm lead; 640 for 5 mm (SFU1605), 800 for 4 mm (SFU1204)
 const float FEED_TRAVEL_MM = 120.0;
 const bool FEED_INVERT = false;
 // Arm: 200 step motor, 16 microsteps, 10:1 planetary gearbox.
