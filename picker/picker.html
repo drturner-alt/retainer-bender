@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retainer Point Picker</title>
+<style>
+  :root { --bg:#f4f5f7; --panel:#fff; --ink:#1d232b; --muted:#5b6672; --accent:#2f6fd6; --line:#d9dde3; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171b; --panel:#1d2127; --ink:#e7eaee; --muted:#9aa4af; --accent:#6aa0ff; --line:#2e343c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--ink);
+         display:grid; grid-template-columns: 1fr 320px; height:100vh; }
+  #view { position:relative; min-height:300px; }
+  #view canvas { display:block; width:100%; height:100%; }
+  #drop { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+          color:var(--muted); pointer-events:none; text-align:center; padding:16px; }
+  aside { background:var(--panel); border-left:1px solid var(--line); padding:16px; overflow:auto; }
+  h1 { font-size:16px; margin:0 0 8px; }
+  ol { padding-left:20px; margin:8px 0; }
+  li { margin:2px 0; }
+  li input { width:70px; font:inherit; color:inherit; background:transparent; border:1px solid var(--line); border-radius:4px; padding:1px 4px; }
+  button, label.btn { font:inherit; padding:6px 10px; margin:4px 4px 0 0; border:1px solid var(--line);
+         border-radius:6px; background:var(--bg); color:var(--ink); cursor:pointer; display:inline-block; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .muted { color:var(--muted); font-size:13px; }
+  @media (max-width: 760px) { body { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } aside { border-left:0; border-top:1px solid var(--line);} }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="view"><div id="drop">Open or drop the lower-arch STL from iTero</div></div>
+<aside>
+  <h1>3-3 retainer picks</h1>
+  <label class="btn">Open STL<input id="file" type="file" accept=".stl" hidden></label>
+  <p class="muted">Drag to rotate, right-drag to pan, scroll to zoom. <b>Click</b> on the tooth to add a point.
+  Pick in order from one end of the wire to the other:</p>
+  <ol class="muted">
+    <li>43, distal end of the bond area</li>
+    <li>43, mesial end of the bond area</li>
+    <li>42, 41, 31, 32: where the wire should touch, about two-thirds up the lingual surface</li>
+    <li>33, mesial end, then distal end of the bond area</li>
+  </ol>
+  <p class="muted">Add a second point on an incisor if the wire should hug its whole lingual surface.</p>
+  <h1>Points</h1>
+  <ol id="list"></ol>
+  <button id="undo">Undo</button><button id="clear">Clear</button>
+  <button id="save" class="primary">Download picks.json</button>
+  <p class="muted" id="status"></p>
+</aside>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { STLLoader } from "three/addons/loaders/STLLoader.js";
+
+const view = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+view.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+scene.background = new THREE.Color(dark ? 0x14171b : 0xf4f5f7);
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 2000);
+camera.position.set(0, 0, 120);
+const controls = new OrbitControls(camera, renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+camera.add(sun); scene.add(camera);
+
+let mesh = null, fileName = "";
+const picks = [];
+const markers = new THREE.Group(); scene.add(markers);
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+function loadBuffer(buf, name) {
+  const geom = new STLLoader().parse(buf);
+  geom.computeVertexNormals();
+  if (mesh) scene.remove(mesh);
+  mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color: 0xf2efe8, roughness: 0.6 }));
+  scene.add(mesh);
+  geom.computeBoundingSphere();
+  const s = geom.boundingSphere;
+  controls.target.copy(s.center);
+  camera.position.copy(s.center).add(new THREE.Vector3(0, 0, s.radius * 2.6));
+  camera.near = s.radius / 100; camera.far = s.radius * 20; camera.updateProjectionMatrix();
+  fileName = name; picks.length = 0; redraw();
+  document.getElementById("drop").style.display = "none";
+  status(`${name}: ${(geom.attributes.position.count / 3).toLocaleString()} triangles`);
+}
+function status(t) { document.getElementById("status").textContent = t; }
+
+document.getElementById("file").onchange = async e => {
+  const f = e.target.files[0]; if (f) loadBuffer(await f.arrayBuffer(), f.name);
+};
+view.addEventListener("dragover", e => e.preventDefault());
+view.addEventListener("drop", async e => {
+  e.preventDefault(); const f = e.dataTransfer.files[0];
+  if (f) loadBuffer(await f.arrayBuffer(), f.name);
+});
+
+// A click, not the end of a drag, adds a point.
+let down = null;
+renderer.domElement.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener("pointerup", e => {
+  if (!mesh || !down || e.button !== 0) return;
+  if (Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(mesh)[0]; if (!hit) return;
+  const n = hit.face.normal.clone().transformDirection(mesh.matrixWorld);
+  // STL winding normally points outward; if this face points away from the
+  // camera the file is wound inside out, so flip it.
+  if (n.dot(ray.ray.direction) > 0) n.negate();
+  picks.push({ p: hit.point.toArray(), n: n.toArray(), label: defaultLabel(picks.length) });
+  redraw();
+});
+const ORDER = ["43d", "43m", "42", "41", "31", "32", "33m", "33d"];
+function defaultLabel(i) { return ORDER[i] || `P${i + 1}`; }
+
+function redraw() {
+  markers.clear();
+  const size = mesh ? mesh.geometry.boundingSphere.radius / 120 : 0.3;
+  picks.forEach((pk, i) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(size * 1.2, 16, 12),
+      new THREE.MeshBasicMaterial({ color: i === 0 || i === picks.length - 1 ? 0xc0392b : 0x2f6fd6 }));
+    m.position.fromArray(pk.p); markers.add(m);
+  });
+  if (picks.length > 1) {
+    const g = new THREE.BufferGeometry().setFromPoints(picks.map(p => new THREE.Vector3(...p.p)));
+    markers.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xd9822b })));
+  }
+  const list = document.getElementById("list"); list.innerHTML = "";
+  picks.forEach((pk, i) => {
+    const li = document.createElement("li");
+    const inp = document.createElement("input"); inp.value = pk.label;
+    inp.oninput = () => { pk.label = inp.value; };
+    li.append(inp, ` ${pk.p.map(v => v.toFixed(1)).join(", ")}`);
+    list.appendChild(li);
+  });
+}
+document.getElementById("undo").onclick = () => { picks.pop(); redraw(); };
+document.getElementById("clear").onclick = () => { picks.length = 0; redraw(); };
+document.getElementById("save").onclick = () => {
+  if (picks.length < 3) { status("Pick at least three points first."); return; }
+  const blob = new Blob([JSON.stringify({ units: "mm", source: fileName, points: picks }, null, 1)],
+                        { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "picks.json"; a.click(); URL.revokeObjectURL(a.href);
+};
+</script>
+</body>
+</html>

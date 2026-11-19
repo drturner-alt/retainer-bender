@@ -1,0 +1,6 @@
+{
+  "wire": "0.028 in stainless steel",
+  "calibrated": false,
+  "note": "PLACEHOLDER numbers, not measurements. Run `rbend calibrate`, bend the test wire, measure it, and replace this table before making a wire for a patient.",
+  "table": [[0, 0], [3.5, 0.01], [7, 3.1], [11, 6.9], [16, 11.6], [21, 16.3], [31, 25.8], [46, 40.1], [61, 54.5]]
+}
