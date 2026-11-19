@@ -16,7 +16,7 @@ iTero lower STL ──► picker (browser) ──► picks.json ──► rbend 
                                                          └── check_jig.stl      print it; the finished wire should drop into the groove
 ```
 
-Hardware build and bill of materials: [hardware/README.md](hardware/README.md).
+Hardware build and bill of materials: [hardware/README.md](hardware/README.md); what to order: [hardware/shopping-list.md](hardware/shopping-list.md).
 Firmware: [firmware/retainer_bender](firmware/retainer_bender/retainer_bender.ino).
 
 ## Install
