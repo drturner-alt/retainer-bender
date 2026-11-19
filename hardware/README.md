@@ -71,7 +71,7 @@ Tie that plate rigidly to the same base plate as the arm's motor.
 
 | Part | Spec | Approx. |
 |---|---|---|
-| NEMA 23 stepper + 10:1 planetary gearbox | ≥ 1 N·m continuous at the output, low backlash (≤ 15 arcmin) | $90–150 |
+| NEMA 23 stepper + 10:1 planetary gearbox | ≥ 1 N·m continuous at the output, backlash up to 30 arcmin is fine (each bend approaches in its own direction, which takes up the slack) | $90–150 |
 | Arm | Steel or aluminium disc on the gearbox shaft, with a bronze or steel bushing for the pin | $10–20 |
 | Bend pin | Hardened 3 mm dowel pin, about 20 mm long, sliding in the bushing | $3 |
 | Lift ring | A printed (PTFE-faced) or aluminium ring around the shaft, under the arm, that does not turn | — |
