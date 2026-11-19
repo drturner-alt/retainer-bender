@@ -250,8 +250,36 @@ def lingual_outline(mesh, origin, e_u, e_v, normal, a, m, b, offset, r_wire, bri
     return np.array(contacts), curve, warnings
 
 
+def shift_gingivally(picks, normals, mesh, mm):
+    """Slide every click `mm` toward the gingiva along its tooth's surface.
+
+    "Toward the gingiva" is measured along the normal of the plane through
+    the clicks. Lower lingual surfaces face occlusally, so the side of that
+    plane the click normals lean toward is occlusal and the other is
+    gingival. Each click is moved down by `mm`, then put back on the tooth by
+    a ray cast in from the lingual. Negative `mm` moves toward the incisal.
+    """
+    from .mesh import raycast
+    P = np.array([pk.p for pk in picks])
+    N = np.array(normals)
+    _, up = g.fit_plane(P)
+    if np.dot(N.mean(axis=0), up) < 0:
+        up = -up
+    out_picks, out_normals = [], []
+    for pk, n in zip(picks, N):
+        q = pk.p - mm * up
+        inward = -(n - np.dot(n, up) * up)       # into the tooth, level with the plane
+        inward /= np.linalg.norm(inward)
+        hit, hn = raycast(q - 3.0 * inward, inward, mesh)
+        if hit is None or np.linalg.norm(hit - q) > 3.0:
+            raise SystemExit(f"{pk.label}: no tooth surface {mm} mm gingival of this click")
+        out_picks.append(Pick(hit, hn, pk.label))
+        out_normals.append(hn)
+    return out_picks, out_normals
+
+
 def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=None, resolve=True,
-              hooks=None):
+              hooks=None, gingival=0.0):
     r = wire["d_mm"] / 2
     warnings = []
 
@@ -264,6 +292,10 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
         normals.append(n)
     have_normals = all(n is not None for n in normals)
 
+    if gingival and have_normals:
+        if mesh is None:
+            raise SystemExit("--gingival needs the scan")
+        picks, normals = shift_gingivally(picks, normals, mesh, gingival)
     P = np.array([pk.p for pk in picks])
     for a, b, la, lb in zip(P[:-1], P[1:], [pk.label for pk in picks][:-1],
                             [pk.label for pk in picks][1:]):

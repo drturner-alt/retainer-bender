@@ -78,10 +78,10 @@ def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine, oc
 
 
 def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_offset=0.0,
-             hooks=Hooks(), opposing=None, occlusion_min=0.5):
+             hooks=Hooks(), opposing=None, occlusion_min=0.5, gingival=0.0):
     out.mkdir(parents=True, exist_ok=True)
     plan = plan_wire(picks, wire, machine, style=style, contact_offset=contact_offset, mesh=mesh,
-                     hooks=hooks)
+                     hooks=hooks, gingival=gingival)
     built, built_err = predicted_shape(plan, sb)
     _, raw_err = uncorrected_shape(plan, sb)
     lines, steps, problems = make_program(plan.lengths, plan.turns, wire, machine, sb)
@@ -202,6 +202,8 @@ def main(argv=None):
                         "smooth/polyline: through every click. Default: auto for 3 clicks")
     p.add_argument("--contact-offset", type=float, default=0.0,
                    help="mm to stand the wire off the teeth (negative presses it in)")
+    p.add_argument("--gingival", type=float, default=0.0,
+                   help="mm to move the clicks toward the gingiva (negative: toward the incisal)")
     hook_args(p)
     common(p)
 
@@ -265,7 +267,8 @@ def main(argv=None):
         style = a.style or ("auto" if len(picks) == 3 and mesh is not None else "smooth")
         _, problems, text = run_plan(picks, wire, machine, sb, a.out, mesh=mesh,
                                      style=style, contact_offset=a.contact_offset, hooks=hooks,
-                                     opposing=load_stl(a.opposing) if a.opposing else None)
+                                     opposing=load_stl(a.opposing) if a.opposing else None,
+                                     gingival=a.gingival)
     print(text)
     return 1 if problems else 0
 

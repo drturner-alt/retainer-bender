@@ -104,6 +104,8 @@ the 3-click design instead. Open `demo/preview.svg` and read
   springback table. It also checks feed travel, arm reach, and that the free
   end never swings into the guide.
 
+`--gingival 1.0` slides every click 1 mm toward the gingiva along its tooth
+before planning; a negative value moves the wire toward the incisal edges.
 `--style polyline` makes straight runs between picks instead of a smooth curve.
 `--contact-offset 0.05` stands the wire 0.05 mm off the teeth, and a negative
 value presses it in.

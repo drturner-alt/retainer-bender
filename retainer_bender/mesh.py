@@ -153,3 +153,33 @@ def slice_plane(tris, origin, normal):
         if len(ok) == 2:
             out.append(ok)
     return np.array(out).reshape(-1, 2, 3)
+
+
+def raycast(origin, direction, tris):
+    """First hit of a ray on the mesh: (point, outward normal) or (None, None).
+
+    The normal is turned to face back along the ray, so it points out of the
+    surface the ray struck.
+    """
+    o = np.asarray(origin, float)
+    d = np.asarray(direction, float)
+    d = d / np.linalg.norm(d)
+    A, B, C = tris[:, 0], tris[:, 1], tris[:, 2]
+    e1, e2 = B - A, C - A
+    p = np.cross(d, e2)
+    det = (e1 * p).sum(1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        inv = 1.0 / det
+        s = o - A
+        u = (s * p).sum(1) * inv
+        q = np.cross(s, e1)
+        v = (q * d).sum(1) * inv
+        t = (e2 * q).sum(1) * inv
+        ok = (np.abs(det) > 1e-12) & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 0)
+    if not ok.any():
+        return None, None
+    i = np.flatnonzero(ok)[np.argmin(t[ok])]
+    n = face_normals(tris[i:i + 1])[0]
+    if np.dot(n, d) > 0:
+        n = -n
+    return o + t[i] * d, n

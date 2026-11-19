@@ -196,3 +196,20 @@ def test_occlusion_check_flags_close_upper_teeth(tmp_path):
     _, _, text = run_plan(pk, wire, Machine.load(), sb, tmp_path / "near", mesh=tris,
                           style="auto", opposing=near)
     assert "upper teeth come within" in text
+
+
+def test_gingival_moves_the_wire_down_and_keeps_contact(tmp_path):
+    wire = get_wire("032")
+    tris, pk = _auto_picks()
+    sb = Springback.default_for("032")
+    base, _, _ = run_plan(pk, wire, Machine.load(), sb, tmp_path / "a", mesh=tris, style="auto")
+    low, problems, _ = run_plan(pk, wire, Machine.load(), sb, tmp_path / "b", mesh=tris,
+                                style="auto", gingival=1.0)
+    assert problems == []
+    # synthetic teeth stand along +z, so gingival is -z
+    drop = float(np.mean(low.to_3d(low.curve)[:, 2]) - np.mean(base.to_3d(base.curve)[:, 2]))
+    assert -1.2 < drop < -0.8
+    from retainer_bender.planner import clearance
+    _, d, at = clearance(low, tris)
+    assert np.min(d[np.isfinite(d)]) > -0.02
+    assert np.all(np.abs(at) < 0.08)
