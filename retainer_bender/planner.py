@@ -174,7 +174,7 @@ def roll_disc(outline, C, D, w, R):
     return C + reach[:, None] * D, reach >= w - 0.03
 
 
-def lingual_outline(mesh, origin, e_u, e_v, normal, a, m, b, offset, r_wire, bridge_mm=4.0,
+def lingual_outline(mesh, origin, e_u, e_v, normal, a, m, b, offset, r_wire, extend_mm=0.0, bridge_mm=4.0,
                     step=0.1, roll_radius=3.0):
     """Auto-design: find where the wire touches each tooth.
 
@@ -223,6 +223,9 @@ def lingual_outline(mesh, origin, e_u, e_v, normal, a, m, b, offset, r_wire, bri
     C = chord_mid - np.array([0.0, depth])
     angA = np.arctan2(*(a - C)[::-1])
     angB = np.arctan2(*(b - C)[::-1])
+    # carry the wire on past each canine click, toward the distal
+    angA += extend_mm / np.linalg.norm(a - C)
+    angB -= extend_mm / np.linalg.norm(b - C)
     # a is on the -u side, b on +u: the fan sweeps from angA down to angB through +v
     span = angA - angB
     radius = np.linalg.norm(m - C)
@@ -391,7 +394,7 @@ def _embrasure(hi, c, origin, e_u, e_v, mesh, window=(1.5, 6.5)):
 
 
 def elbow_ends(curve, ends2d, picks_world, gum_world, step, leg_range, gum_gap, up_sign,
-               machine, origin, e_u, e_v, normal, r, mesh, margin=0.5):
+               machine, origin, e_u, e_v, normal, r, mesh, margin=0.5, bend_deg=75.0):
     """Canine ends as a 0.75 mm gingival step at the lateral-canine embrasure,
     then a 90 degree elbow toward the gingiva at the canine click (mid-crown)
     with a short leg running down the canine's lingual surface.
@@ -442,10 +445,19 @@ def elbow_ends(curve, ends2d, picks_world, gum_world, step, leg_range, gum_gap, 
         # tilt the leg off the tooth until it clears along its whole length
         # (a convex canine bulges toward the cingulum under a straight leg)
         from .mesh import signed_distances
+        # straight on (out past the elbow) in scan coordinates, then the leg
+        # turns bend_deg from that toward the gingiva
+        t_uvw = path[0] - path[min(len(path) - 1, int(1.0 / 0.02))]
+        t_w = t_uvw[0] * e_u + t_uvw[1] * e_v + t_uvw[2] * normal
+        t_w /= np.linalg.norm(t_w)
+        g_perp = down - np.dot(down, t_w) * t_w
+        g_perp /= np.linalg.norm(g_perp)
+        b = np.radians(bend_deg)
+        aim = np.cos(b) * t_w + np.sin(b) * g_perp
         tilt = 0.0
         for tilt in np.arange(0.0, 41.0, 1.0):
             a = np.radians(tilt)
-            dir_w = np.cos(a) * down + np.sin(a) * n_s
+            dir_w = np.cos(a) * aim + np.sin(a) * n_s
             dir_w /= np.linalg.norm(dir_w)
             ts = np.linspace(0.2, 1.0, 9) * leg
             dd = signed_distances(Kw + np.outer(ts, dir_w), mesh) - r if mesh is not None else np.zeros(1)
@@ -457,7 +469,7 @@ def elbow_ends(curve, ends2d, picks_world, gum_world, step, leg_range, gum_gap, 
         g_uvw = np.array([dir_w @ e_u, dir_w @ e_v, dir_w @ normal])
         run_dir = path[min(len(path) - 1, int(1.0 / 0.02))] - path[0]
         run_dir /= np.linalg.norm(run_dir)
-        elbow_deg = float(np.degrees(np.arccos(np.clip(np.dot(-run_dir, g_uvw), -1, 1))))
+        bend_made = float(np.degrees(np.arccos(np.clip(np.dot(-run_dir, g_uvw), -1, 1))))
         leg_pts = K + np.outer(np.linspace(1, 0, max(2, int(leg / 0.02) + 1)), g_uvw * leg)
         final = np.vstack([leg_pts, path[1:]])
         if A is None:
@@ -467,7 +479,7 @@ def elbow_ends(curve, ends2d, picks_world, gum_world, step, leg_range, gum_gap, 
             flat = np.vstack([leg_flat, path[1:, :2]])
             marks = {"elbow_mm": leg, "joggle_from_mm": None, "joggle_to_mm": None,
                      "joggle_offset_mm": 0.0, "embrasure_gap_mm": None, "leg_mm": leg,
-                     "elbow_deg": 180.0 - elbow_deg, "leg_tilt_deg": float(tilt)}
+                     "elbow_deg": bend_made, "leg_tilt_deg": float(tilt)}
             sides.append((final, flat, x_resume, marks, [K], [path[0, :2]]))
             continue
         # the flat version: leg straight on, joggle undone (lengths kept)
@@ -486,7 +498,7 @@ def elbow_ends(curve, ends2d, picks_world, gum_world, step, leg_range, gum_gap, 
                  "joggle_from_mm": float(fl[len(leg_flat) - 1 + iA]),
                  "joggle_to_mm": float(fl[len(leg_flat) - 1 + iA] + np.linalg.norm(B - A)),
                  "joggle_offset_mm": float(np.linalg.norm((B - A) - np.append(d2, 0) * np.dot(B - A, np.append(d2, 0)))),
-                 "embrasure_gap_mm": gap, "leg_mm": leg, "elbow_deg": 180.0 - elbow_deg,
+                 "embrasure_gap_mm": gap, "leg_mm": leg, "elbow_deg": bend_made,
                  "leg_tilt_deg": float(tilt)}
         sides.append((final, flat, x_resume, marks, [K, A, B], [before[0], A_pre, B[:2]]))
 
@@ -541,7 +553,7 @@ def make_steps(curve, ends2d, step, inset, up_sign, machine, origin, e_u, e_v, n
 
 def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=None, resolve=True,
               hooks=None, gingival=0.0, canine_step=0.0, step_inset=2.5, ends="curl",
-              elbow_step=0.75, leg_range=(1.0, 1.5), gum_gap=2.0):
+              elbow_step=0.75, leg_range=(1.0, 1.5), gum_gap=2.0, elbow_deg=75.0, elbow_distal=1.0):
     r = wire["d_mm"] / 2
     warnings = []
     gum = [None, None]
@@ -629,7 +641,8 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
             raise SystemExit("auto design needs three clicks (43, midline, 33), or five with the two "
                              "gum clicks, and the scan")
         found, outline, w2 = lingual_outline(mesh, origin, e_u, e_v, normal, contacts[0],
-                                             contacts[1], contacts[2], r + contact_offset, r)
+                                             contacts[1], contacts[2], r + contact_offset, r,
+                                             extend_mm=elbow_distal if ends == "elbow" else 0.0)
         warnings += w2
         dense = outline
         auto_contacts = found
@@ -664,7 +677,7 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
         pw = [(picks[0].p, normals[0]), (picks[-1].p, normals[-1])]
         final, flat, cuts3, cuts2, finish, w2 = elbow_ends(
             curve, ends2d, pw, gum, elbow_step, leg_range, gum_gap, up_sign, machine,
-            origin, e_u, e_v, normal, r, mesh)
+            origin, e_u, e_v, normal, r, mesh, bend_deg=elbow_deg)
         warnings += w2
         pidx, _ = g.fit_polyline_pieces(flat, cuts2, machine.path_tolerance_mm,
                                         machine.min_segment_mm, machine.max_segment_mm)

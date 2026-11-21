@@ -75,18 +75,21 @@ the 3-click design instead. Open `demo/preview.svg` and read
 
 ## The canine ends (default)
 
-Each end has:
-- a **0.75 mm gingival step** at the lateral–canine embrasure, found as the
-  biggest gap between wire and teeth just in from the canine click. The
-  canine section then runs lower, following the canine's lingual slope.
-- a **90° elbow toward the gingiva** at the canine click (mid-crown), with a
-  **1–1.5 mm leg** down the canine's lingual. The leg is tilted just enough
-  to clear the canine's bulge, so the elbow comes out a few degrees off 90.
+Each end runs on the teeth at one height (no step, so no gap at the
+embrasure). About 1 mm distal of the canine click it turns **75° toward the
+gingiva** into a **1–1.5 mm leg** down the canine's lingual. The leg is
+tilted a degree or two more if needed to clear the canine's bulge. The elbow
+is what stops the wire rolling while it's bonded.
 
-The machine bends the wire flat, with the step and elbows unfolded and the
-same total length. You then form the two joggles and the two elbows at the
-marks in the report's "Finishing" section and on `template_1to1.svg`, all
-measured along the wire from each end. `wire.stl` is the finished 3D wire.
+- `--elbow-deg 75`: how far the wire turns toward the gingiva
+- `--elbow-distal 1.0`: mm past the canine click to put the elbow
+- `--elbow-step 0.75`: add a gingival step at the lateral–canine embrasure
+  (it opened a 0.17 mm gap at a lateral on the first real scan)
+
+The machine bends the wire flat, with the elbows unfolded and the same total
+length. You then fold the two elbows at the marks in the report's
+"Finishing" section and on `template_1to1.svg`, measured along the wire from
+each end. `wire.stl` is the finished 3D wire.
 
 Why not bend the steps and elbows on the machine: the bend pin pushes the
 wire 10 mm from the die. To bend out of plane, the machine would roll the
