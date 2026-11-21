@@ -120,7 +120,7 @@ def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_o
     return plan, problems, text
 
 
-def calibration_program(wire, machine, sb, out, angles=(4, 6, 8, 10, 12, 15, 20, 25, 30), seg=8.0):
+def calibration_program(wire, machine, sb, out, angles=(4, 6, 8, 10, 12, 15, 20, 25, 30), seg=12.0):
     """One test wire: straight pieces with alternating bends between them.
 
     Alternating the direction keeps the wire from curling into the machine

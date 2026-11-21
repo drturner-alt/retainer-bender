@@ -67,7 +67,7 @@ the 3-click design instead. Open `demo/preview.svg` and read
    rbend send case123/program.txt --port /dev/ttyACM0
    ```
    Load the wire tip flush with the die before sending. When it finishes, cut
-   at the die and snip the 6 mm lead-in off the end that came out first.
+   at the die and snip the 11 mm lead-in off the end that came out first.
 5. **Check the result.** Lay the wire on the printed `template_1to1.svg`,
    drop it into the printed `check_jig.stl`, and try it on the printed model.
 

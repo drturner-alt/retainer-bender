@@ -80,8 +80,10 @@ Tie that plate rigidly to the same base plate as the arm's motor.
 
 How it fits together:
 - The gearbox shaft is vertical and sits **directly under the die exit**.
-- The pin slides vertically in a bushing in the arm, **5 mm** from the shaft
-  centre.
+- The pin slides vertically in a bushing in the arm, **10 mm** from the shaft
+  centre. That clears the 14 mm gearbox shaft, so the pin can pass down beside
+  it to the lift ring, and it clears the die nose for arm angles up to about
+  110°.
 - Its lower end rests on the lift ring. The ring doesn't rotate, so the pin
   slides around on it as the arm turns, and no wires have to turn with the arm.
 - Servo up: the ring lifts and the pin rises about 1.5 mm above the deck,
@@ -96,8 +98,8 @@ How it fits together:
 3. Turn until the pin touches the wire, then on by the commanded angle.
 4. Pin down.
 
-Because the pin is 5 mm out, at least 5 mm of wire has to be out of the die
-before the first bend. The program feeds a 6 mm straight lead-in (set by
+Because the pin is 10 mm out, at least 10 mm of wire has to be out of the die
+before the first bend. The program feeds an 11 mm straight lead-in (set by
 `lead_in_mm`); snip it off the first end after bending.
 
 These numbers are in `config/machine.json` (`arm_radius_mm`,
@@ -106,8 +108,9 @@ program, so a program that can't be made is refused before it reaches the
 machine.
 
 **Keep the guide slim behind the die.** The free end curls round as the wire
-is bent. Keep the tube and die plate within ±3 mm of the wire line for the
-first 6 mm behind the exit (`body_halfwidth_mm`).
+is bent. Keep the die nose and the tube clamp within ±3.5 mm of the wire line
+(`die_halfwidth_mm`, `body_halfwidth_mm`). The software checks every bend for
+the pin against the die nose and the free end against the clamp.
 
 ## 4. Frame and printed parts
 
@@ -170,7 +173,7 @@ rbend calibrate --wire 032 -o calib032
 rbend send calib032/calibration_program.txt --port /dev/ttyACM0
 ```
 
-The calibration program bends one test wire: 8 mm straight pieces joined by
+The calibration program bends one test wire: 12 mm straight pieces joined by
 bends of 4–30° commanded, alternating direction. Lay the wire flat and measure
 each angle, either with a protractor or by scanning it on a flatbed and
 measuring in any image tool. Enter the angles in

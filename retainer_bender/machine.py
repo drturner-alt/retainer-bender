@@ -37,14 +37,15 @@ from .springback import CONFIG_DIR
 @dataclass
 class Machine:
     feed_travel_mm: float = 120.0
-    lead_in_mm: float = 6.0
-    arm_radius_mm: float = 5.0
+    lead_in_mm: float = 11.0
+    arm_radius_mm: float = 10.0
+    die_halfwidth_mm: float = 3.5
     pin_diameter_mm: float = 3.0
     approach_margin_deg: float = 6.0
     contact_trim_deg: float = 0.0
-    arm_max_deg: float = 150.0
+    arm_max_deg: float = 110.0
     body_start_mm: float = 0.5
-    body_halfwidth_mm: float = 3.0
+    body_halfwidth_mm: float = 3.5
     clearance_mm: float = 0.15
     min_segment_mm: float = 1.0
     max_segment_mm: float = 6.0
@@ -121,6 +122,18 @@ def wire_crossing(shape, radius):
     return None
 
 
+def pin_hits_die(arm_deg, machine):
+    """The raised pin against the die nose: a bar of half-width
+    die_halfwidth_mm coming from behind (-x) and ending in a half-round on
+    the axis."""
+    p = machine.pin_at(arm_deg)
+    if p[0] >= 0:
+        d = float(np.hypot(*p))
+    else:
+        d = abs(float(p[1]))
+    return d < machine.die_halfwidth_mm + machine.pin_diameter_mm / 2 + machine.clearance_mm
+
+
 def find_contact(shape, direction, machine, r, step=0.05):
     """Where to raise the pin and where it first touches the wire.
 
@@ -194,6 +207,9 @@ def simulate(lengths, commands_deg, kept_deg, wire, machine, notes=None):
                             f"past its {machine.arm_max_deg:.0f} deg limit")
         if abs(kept_deg[k]) > machine.max_bend_deg:
             problems.append(f"bend {k + 1} is {kept_deg[k]:+.1f} deg, over the {machine.max_bend_deg:.0f} deg limit")
+        sweep = np.linspace(approach, target, max(2, int(abs(target - approach)) + 1))
+        if any(pin_hits_die(a, machine) for a in sweep):
+            problems.append(f"bend {k + 1}: the raised pin would hit the die nose")
         if _in_body(_rotate(shape, cmd), machine, r):
             problems.append(f"bend {k + 1}: the free end swings into the guide behind the die")
         lines += [f"ARM {approach:.2f}", "PIN UP",
