@@ -8,6 +8,7 @@ dependencies = ["numpy>=1.24"]
 [project.optional-dependencies]
 machine = ["pyserial>=3.5"]
 test = ["pytest>=7"]
+cad = ["manifold3d>=2.3"]
 
 [project.scripts]
 rbend = "retainer_bender.cli:main"

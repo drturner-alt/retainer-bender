@@ -9,3 +9,5 @@ scans/
 *.stl
 !examples/*.stl
 picks*.json
+!hardware/cad/stl/*.stl
+hardware/cad/__pycache__/
