@@ -64,10 +64,32 @@ class Plan:
     path_error: float
     warnings: list = field(default_factory=list)
     contact_labels: list = field(default_factory=list)
+    curve_w: np.ndarray | None = None    # height of the dense curve off the plane (3D wires)
+    vertices3: np.ndarray | None = None  # bend points (u, v, w) for 3D wires
+    canine_step: float = 0.0
 
-    def to_3d(self, uv):
+    @property
+    def is3d(self):
+        return self.vertices3 is not None
+
+    def to_3d(self, uv, w=None):
         uv = np.asarray(uv, float)
-        return self.origin + uv[..., :1] * self.e_u + uv[..., 1:2] * self.e_v
+        out = self.origin + uv[..., :1] * self.e_u + uv[..., 1:2] * self.e_v
+        if w is not None:
+            out = out + np.asarray(w, float)[..., None] * self.normal
+        return out
+
+    def curve3(self):
+        """Dense centre line as (u, v, w)."""
+        w = self.curve_w if self.curve_w is not None else np.zeros(len(self.curve))
+        return np.column_stack([self.curve, w])
+
+    def world(self, step=None):
+        """Dense centre line in scan coordinates, optionally resampled."""
+        c = self.curve3()
+        if step:
+            c = g.resample(c, step)
+        return self.to_3d(c[:, :2], c[:, 2]), c
 
     @property
     def total_length(self):
@@ -278,8 +300,115 @@ def shift_gingivally(picks, normals, mesh, mm):
     return out_picks, out_normals
 
 
+def step_profile(s, start, end, step, inset, ramp):
+    """Height (as a positive drop) along the wire for a step at each canine.
+
+    s: arc length of each dense point; start/end: arc positions of the two
+    canine clicks; the drop is `step` from each end up to `inset` toward the
+    midline, easing to zero over `ramp` mm (a cosine, so the two bends that
+    make each step share the turn equally).
+    """
+    def ease(x):            # 1 before the step, 0 after it
+        return np.where(x <= 0, 1.0, np.where(x >= 1, 0.0, 0.5 * (1 + np.cos(np.pi * x))))
+    a = ease((s - (start + inset - ramp / 2)) / ramp)
+    b = ease(((end - inset + ramp / 2) - s) / ramp)
+    return step * np.maximum(a, b)
+
+
+def _at(path, sarr, x):
+    """Point on a polyline at arc length x."""
+    x = min(max(x, 0.0), sarr[-1])
+    return np.array([np.interp(x, sarr, path[:, k]) for k in range(path.shape[1])])
+
+
+def _piece(path, sarr, x0, x1):
+    """The polyline between arc lengths x0 and x1, ends included."""
+    inner = path[(sarr > x0) & (sarr < x1)]
+    return np.vstack([_at(path, sarr, x0), inner, _at(path, sarr, x1)])
+
+
+def _line(p, q, step=0.02):
+    n = max(2, int(np.ceil(np.linalg.norm(q - p) / step)) + 1)
+    t = np.linspace(0, 1, n)[:, None]
+    return p + t * (q - p)
+
+
+def _side(hi, low, c, inset, step_w, margin, tan_max):
+    """One end of the wire, walking in from the canine end.
+
+    hi: the wire at incisor height (2D), low: the same wire settled onto the
+    teeth a step lower (2D), both oriented from this end inward; c: arc
+    position of the canine click on `hi`. Returns (3D path from the end to
+    the junction with the incisor run, arc position on `hi` where the run
+    resumes, the two ramp points).
+    """
+    sh = g.arc_lengths(hi)
+    sl = g.arc_lengths(low)
+    along = 2.5
+    for _ in range(8):
+        a = c + inset - along / 2              # ramp starts (low side)
+        b = a + along                          # ramp ends (incisor side)
+        P = _at(low, sl, a - margin)           # end of the settled low run
+        Q = _at(hi, sh, b + margin)            # start of the incisor run
+        d = (Q - P) / np.linalg.norm(Q - P)    # one in-plane direction for both lead-ins
+        A = P + d * margin
+        B = Q - d * margin
+        lateral = (B - A) - d * np.dot(B - A, d)
+        need = np.hypot(np.linalg.norm(lateral), step_w) / tan_max
+        have = float(np.dot(B - A, d))
+        if have >= need - 1e-3:
+            break
+        along += need - have + 0.05
+    wl = step_w
+    low3 = np.column_stack([low, np.full(len(low), wl)])
+    path = np.vstack([
+        _piece(low3, sl, 0.0, a - margin),
+        _line(np.append(P, wl), np.append(A, wl))[1:],
+        _line(np.append(A, wl), np.append(B, 0.0))[1:],
+        _line(np.append(B, 0.0), np.append(Q, 0.0))[1:],
+    ])
+    return path, b + margin, (np.append(P, wl), np.append(A, wl), np.append(B, 0.0), np.append(Q, 0.0))
+
+
+def make_steps(curve, ends2d, step, inset, up_sign, machine, origin, e_u, e_v, normal, r, mesh,
+               margin=1.0):
+    """Put a gingival step at each canine, the way it would be bent by hand.
+
+    The canine part of the wire is lowered by `step` and settled onto the
+    tooth at that height (on a sloping lingual surface that also moves it
+    lingually). It joins the run across the incisors by one straight ramp,
+    entered and left along the same in-plane direction, so the two bends
+    that make the step lie in one plane: the machine rolls the wire once,
+    bends, feeds the ramp and bends back. The ramp is long enough that each
+    step bend is at most 70% of the machine's limit.
+
+    Returns (2D curve, height of each point along the plane normal, indices
+    where vertices must fall, warnings).
+    """
+    warnings = []
+    wl = -up_sign * step
+    low3 = np.column_stack([curve, np.full(len(curve), wl)])
+    if mesh is not None:
+        low3, pushed = push_clear(low3, origin, e_u, e_v, r, mesh, normal=normal)
+    low = low3[:, :2]
+    tan_max = np.tan(np.radians(0.7 * machine.max_bend_deg))
+    s = g.arc_lengths(curve)
+    i0 = int(np.argmin(np.linalg.norm(curve - ends2d[0], axis=1)))
+    i1 = int(np.argmin(np.linalg.norm(curve - ends2d[1], axis=1)))
+    head, x_head, kp0 = _side(curve, low, s[i0], inset, wl, margin, tan_max)
+    tail_r, x_tail, kp1 = _side(curve[::-1], low[::-1], s[-1] - s[i1], inset, wl, margin, tan_max)
+    x_tail = s[-1] - x_tail
+    if x_head >= x_tail:
+        raise SystemExit("the two canine steps overlap; reduce --canine-step or --step-inset")
+    mid = _piece(np.column_stack([curve, np.zeros(len(curve))]), s, x_head, x_tail)
+    path = np.vstack([head, mid[1:], tail_r[::-1][1:]])
+    path = g.resample(path, 0.02)
+    cuts = [int(np.argmin(np.linalg.norm(path - p, axis=1))) for p in (*kp0, *kp1)]
+    return path[:, :2], path[:, 2], cuts, warnings
+
+
 def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=None, resolve=True,
-              hooks=None, gingival=0.0):
+              hooks=None, gingival=0.0, canine_step=0.0, step_inset=2.5):
     r = wire["d_mm"] / 2
     warnings = []
 
@@ -304,6 +433,20 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
 
     C3 = P + (np.array(normals) * (r + contact_offset) if have_normals else 0.0)
 
+    up_sign = 1.0
+    if canine_step:
+        if not have_normals:
+            raise SystemExit("a canine step needs click normals (use the picker)")
+        # The canine clicks are where the wire lands, a step below the run
+        # across the incisors: lift them by the step so the plane is the
+        # incisor run's. Lower lingual surfaces face occlusally, so the side
+        # the click normals lean toward is up.
+        _, n0 = g.fit_plane(C3)
+        up0 = n0 if np.dot(np.mean(normals, axis=0), n0) > 0 else -n0
+        C3 = C3.copy()
+        C3[0] += canine_step * up0
+        C3[-1] += canine_step * up0
+
     origin, normal = g.fit_plane(C3)
     chord = C3[-1] - C3[0]
     e_u = chord - np.dot(chord, normal) * normal
@@ -317,7 +460,11 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
     if mid < 0:
         e_v, uv[:, 1] = -e_v, -uv[:, 1]
     normal = np.cross(e_u, e_v)
+    if have_normals:
+        up_sign = 1.0 if np.dot(np.mean(normals, axis=0), normal) > 0 else -1.0
     off = rel @ normal
+    # (with a canine step the canine clicks were lifted onto the plane above,
+    # and the wire is lowered back onto them: "off" is how far it misses them)
     contacts = np.column_stack([(P - origin) @ e_u, (P - origin) @ e_v])
 
     if not have_normals:
@@ -350,6 +497,7 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
     else:
         raise SystemExit(f"unknown style {style!r}")
     curve = g.resample(dense, 0.02)
+    ends2d = (curve[0].copy(), curve[-1].copy())
     if hooks and hooks.angle_deg > 0:
         if have_normals:
             sides = [-np.array([normals[i] @ e_u, normals[i] @ e_v]) for i in (0, -1)]
@@ -365,15 +513,29 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
             warnings.append(f"wire moved up to {pushed:.2f} mm off the teeth where the "
                             "curve between picks would have cut into them")
 
-    idx, err = g.fit_polyline(curve, machine.path_tolerance_mm,
-                              machine.min_segment_mm, machine.max_segment_mm)
+    curve_w = None
+    if canine_step:
+        curve, curve_w, cuts, w2 = make_steps(curve, ends2d, canine_step, step_inset, up_sign,
+                                              machine, origin, e_u, e_v, normal, r,
+                                              mesh if resolve else None)
+        warnings += w2
+        curve3 = np.column_stack([curve, curve_w])
+        idx, err = g.fit_polyline_pieces(curve3, cuts, machine.path_tolerance_mm,
+                                         machine.min_segment_mm, machine.max_segment_mm)
+        curve = curve3
+    else:
+        idx, err = g.fit_polyline(curve, machine.path_tolerance_mm,
+                                  machine.min_segment_mm, machine.max_segment_mm)
     if style == "polyline":
         # keep every pick as a bend point
         pick_idx = [int(np.argmin(np.linalg.norm(curve - q, axis=1))) for q in uv]
         idx = np.unique(np.concatenate([idx, pick_idx]))
-    vertices = curve[idx]
-    lengths = g.segment_lengths(vertices)
+    vertices3 = curve[idx] if curve_w is not None else None
+    vertices = curve[idx][:, :2]
+    lengths = g.segment_lengths(curve[idx])
     turns = g.turning_angles(vertices)
+    if curve_w is not None:
+        curve = curve[:, :2]
 
     signs = np.sign(np.round(np.degrees(turns), 1))
     flips = int(np.sum(signs[1:] * signs[:-1] < 0))
@@ -389,10 +551,12 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
     return Plan(contact_labels=contact_labels, wire=wire, style=style, origin=origin, e_u=e_u, e_v=e_v, normal=normal,
                 labels=[pk.label for pk in picks], contacts_2d=contacts, centers_2d=uv,
                 out_of_plane=off, curve=curve, vertices=vertices, lengths=lengths,
-                turns=turns, path_error=err, warnings=warnings)
+                turns=turns, path_error=err, warnings=warnings,
+                curve_w=curve_w, vertices3=vertices3, canine_step=canine_step)
 
 
-def push_clear(curve, origin, e_u, e_v, r, mesh, step=0.2, iters=20, sigma=0.4):
+def push_clear(curve, origin, e_u, e_v, r, mesh, step=0.2, iters=20, sigma=0.4, normal=None,
+               lock=None):
     """Move the wire out of the teeth wherever it cuts into them.
 
     The curve through the picks is free to bow between them, and across a
@@ -410,6 +574,8 @@ def push_clear(curve, origin, e_u, e_v, r, mesh, step=0.2, iters=20, sigma=0.4):
         samples = g.resample(curve, step)
         s = g.arc_lengths(samples) * (s_dense[-1] / max(g.arc_lengths(samples)[-1], 1e-9))
         pts3 = origin + samples[:, :1] * e_u + samples[:, 1:2] * e_v
+        if curve.shape[1] == 3:
+            pts3 = pts3 + samples[:, 2:3] * normal
         d, n = signed_distances(pts3, mesh, return_normals=True)
         short = np.where(np.isfinite(d), r + 0.01 - d, 0.0)
         short[short < 0] = 0
@@ -434,8 +600,14 @@ def push_clear(curve, origin, e_u, e_v, r, mesh, step=0.2, iters=20, sigma=0.4):
         boost = np.where(need > mag, need / np.maximum(mag, 1e-9), 1.0)
         boost = np.minimum(boost, 3.0)
         disp *= np.convolve(np.pad(boost, half, mode="edge"), ker / ker.sum(), "valid")[:, None]
+        if curve.shape[1] == 3:
+            disp = np.column_stack([disp, np.zeros(len(disp))])      # height stays as planned
+        if lock is not None:
+            disp[lock] = 0.0                                          # straight step zones stay put
         curve += disp
         total += np.linalg.norm(disp, axis=1)
+    if lock is not None:
+        return curve, float(total.max())          # keep point-for-point with the lock mask
     return g.resample(curve, 0.02), float(total.max())
 
 
@@ -465,9 +637,10 @@ def clearance(plan, mesh, step=0.2):
     Returns (arc positions, clearance per sample, clearance at each pick).
     """
     from .mesh import signed_distances
-    samples = g.resample(plan.curve, step)
-    s = g.arc_lengths(samples)
-    d = signed_distances(plan.to_3d(samples), mesh) - plan.wire["d_mm"] / 2
+    pts, c = plan.world(step)
+    samples = c[:, :2]
+    s = g.arc_lengths(c)
+    d = signed_distances(pts, mesh) - plan.wire["d_mm"] / 2
     at_picks = []
     for q in plan.centers_2d:
         i = int(np.argmin(np.linalg.norm(samples - q, axis=1)))

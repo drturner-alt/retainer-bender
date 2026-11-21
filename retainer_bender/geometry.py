@@ -61,18 +61,23 @@ def resample(poly, step):
 
 
 def chord_deviation(curve, i, j):
-    """Largest distance of curve[i..j] from the straight chord curve[i]->curve[j]."""
+    """Largest distance of curve[i..j] from the straight chord curve[i]->curve[j].
+    Works in 2D or 3D."""
     a, b = curve[i], curve[j]
     d = b - a
     L = np.linalg.norm(d)
     seg = curve[i:j + 1] - a
     if L < 1e-12:
         return float(np.max(np.linalg.norm(seg, axis=1)))
-    return float(np.max(np.abs(seg[:, 0] * d[1] - seg[:, 1] * d[0]) / L))
+    if curve.shape[1] == 2:
+        return float(np.max(np.abs(seg[:, 0] * d[1] - seg[:, 1] * d[0]) / L))
+    u = d / L
+    perp = seg - np.outer(seg @ u, u)
+    return float(np.max(np.linalg.norm(perp, axis=1)))
 
 
 def fit_polyline(curve, tol, min_seg, max_seg):
-    """Replace a dense 2D curve with as few straight segments as possible.
+    """Replace a dense 2D or 3D curve with as few straight segments as possible.
 
     Each chord stays within `tol` of the curve, is at least `min_seg` long
     (the machine cannot place two bends closer than that) and at most
@@ -183,3 +188,62 @@ def left_normals(poly):
     t = np.vstack([d[0], d[:-1] + d[1:], d[-1]])
     t /= np.linalg.norm(t, axis=1, keepdims=True)
     return np.column_stack([-t[:, 1], t[:, 0]])
+
+
+def kabsch(src, dst):
+    """Best proper rotation + translation of src onto dst (no mirroring: a 3D
+    wire and its mirror image are different wires). Returns the moved src."""
+    src = np.asarray(src, float)
+    dst = np.asarray(dst, float)
+    cs, cd = src.mean(0), dst.mean(0)
+    H = (src - cs).T @ (dst - cd)
+    U, _, Vt = np.linalg.svd(H)
+    D = np.eye(src.shape[1])
+    D[-1, -1] = np.sign(np.linalg.det(Vt.T @ U.T))
+    R = Vt.T @ D @ U.T
+    return (src - cs) @ R.T + cd
+
+
+def rotation_between(a, b):
+    """Smallest rotation matrix taking unit vector a to unit vector b (3D)."""
+    a = a / np.linalg.norm(a)
+    b = b / np.linalg.norm(b)
+    v = np.cross(a, b)
+    c = float(np.dot(a, b))
+    s = np.linalg.norm(v)
+    if s < 1e-12:
+        if c > 0:
+            return np.eye(3)
+        # 180 degrees: any axis perpendicular to a
+        axis = np.cross(a, [1.0, 0, 0])
+        if np.linalg.norm(axis) < 1e-6:
+            axis = np.cross(a, [0, 1.0, 0])
+        axis /= np.linalg.norm(axis)
+        return 2 * np.outer(axis, axis) - np.eye(3)
+    K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + K + K @ K * ((1 - c) / s ** 2)
+
+
+def rot_x(deg):
+    t = np.radians(deg)
+    c, s = np.cos(t), np.sin(t)
+    return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+
+
+def rot_z(deg):
+    t = np.radians(deg)
+    c, s = np.cos(t), np.sin(t)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+
+def fit_polyline_pieces(curve, cuts, tol, min_seg, max_seg):
+    """fit_polyline, but with a vertex forced at every index in `cuts`."""
+    cuts = sorted(set([0, len(curve) - 1] + [int(c) for c in cuts]))
+    idx, worst = [0], 0.0
+    for a, b in zip(cuts[:-1], cuts[1:]):
+        if b - a < 1:
+            continue
+        sub, w = fit_polyline(curve[a:b + 1], tol, min_seg, max_seg)
+        idx += [a + int(i) for i in sub[1:]]
+        worst = max(worst, w)
+    return np.array(idx), worst

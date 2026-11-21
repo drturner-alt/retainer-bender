@@ -24,7 +24,8 @@ from .wires import get_wire
 
 def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine, occl=None):
     w = plan.wire
-    L = [f"Lower 3-3 lingual retainer, {w['label']} ({w['d_mm']:.3f} mm), style {plan.style}",
+    L = [f"Lower 3-3 lingual retainer, {w['label']} ({w['d_mm']:.3f} mm), style {plan.style}"
+         + (f", 3D with {plan.canine_step:.1f} mm gingival steps onto the canines" if plan.is3d else ""),
          f"Wire length {plan.total_length:.2f} mm, {len(plan.turns)} bends",
          f"Straight segments follow the curve to within {plan.path_error:.3f} mm",
          f"Predicted shape after springback correction: within {built_err:.3f} mm of target",
@@ -57,7 +58,8 @@ def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine, oc
         L.append(f"Occlusion: nearest upper tooth is {occl:.2f} mm from the wire")
     L += ["", "Bend list, from the first end out (also works for bending by hand):",
           f"  (the machine feeds {machine.lead_in_mm:.1f} mm extra before bend 1; trim it off after)",
-          "   #   feed mm   keep deg   command deg   pin touches   arm to"]
+          "   #   feed mm   keep deg   command deg   pin touches   arm to"
+          + ("   roll deg" if plan.is3d else "")]
     k = 0
     feeds = [st["mm"] for st in steps if st["op"] == "feed"]
     feeds[0] -= machine.lead_in_mm
@@ -67,6 +69,8 @@ def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine, oc
         row = f"  {k + 1:>2}   {feeds[k]:7.2f}   {st['target_deg']:+8.2f}   {st['command_deg']:+11.2f}"
         if "arm_deg" in st:
             row += f"   {st['contact_deg']:+10.2f}   {st['arm_deg']:+7.2f}"
+            if "roll_deg" in st:
+                row += f"   {st['roll_deg']:+8.1f}"
         L.append(row)
         k += 1
     L.append(f"  last  {feeds[-1]:7.2f}   (then cut)")
@@ -77,14 +81,42 @@ def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine, oc
     return text
 
 
+class _NoCorrection:
+    """Bend to the target angle as if nothing sprang back (to show what
+    springback would cost)."""
+    def __init__(self, sb):
+        self.sb = sb
+
+    def command_for(self, target):
+        return max(target, 0.0)
+
+    def kept(self, commanded):
+        return self.sb.kept(commanded)
+
+
 def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_offset=0.0,
-             hooks=Hooks(), opposing=None, occlusion_min=0.5, gingival=0.0):
+             hooks=Hooks(), opposing=None, occlusion_min=0.5, gingival=0.0, canine_step=0.0):
     out.mkdir(parents=True, exist_ok=True)
     plan = plan_wire(picks, wire, machine, style=style, contact_offset=contact_offset, mesh=mesh,
-                     hooks=hooks, gingival=gingival)
-    built, built_err = predicted_shape(plan, sb)
-    _, raw_err = uncorrected_shape(plan, sb)
-    lines, steps, problems = make_program(plan.lengths, plan.turns, wire, machine, sb)
+                     hooks=hooks, gingival=gingival, canine_step=canine_step)
+    if plan.is3d:
+        from .machine3d import built_error, make_program_3d
+        lines, steps, problems, P = make_program_3d(plan.vertices3, wire, machine, sb)
+        built = None
+        built_err = max(plan.path_error, built_error(plan.vertices3, P, machine.lead_in_mm))
+        _, _, _, Praw = make_program_3d(plan.vertices3, wire, machine, _NoCorrection(sb))
+        raw_err = built_error(plan.vertices3, Praw, machine.lead_in_mm)
+        lines = ["; retainer-bender program (3D: ROT turns the wire about its own axis)",
+                 f"; wire {wire['label']}  ({wire['d_mm']:.3f} mm), canine steps {plan.canine_step:.2f} mm",
+                 f"; springback table: {sb.source or 'built-in'}"
+                 + ("" if sb.calibrated else "  ** UNCALIBRATED PLACEHOLDER **"),
+                 "; load: tip flush with the die exit, clamp closed, pin down",
+                 f"; afterwards trim {machine.lead_in_mm:.1f} mm of straight lead-in off the first end out",
+                 ] + lines
+    else:
+        built, built_err = predicted_shape(plan, sb)
+        _, raw_err = uncorrected_shape(plan, sb)
+        lines, steps, problems = make_program(plan.lengths, plan.turns, wire, machine, sb)
     clr = clearance(plan, mesh) if mesh is not None else None
 
     (out / "program.txt").write_text("\n".join(lines) + "\n")
@@ -94,10 +126,9 @@ def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_o
     wire_stl(plan, out / "wire.stl")
     occl = None
     if opposing is not None:
-        from .geometry import resample
         from .mesh import signed_distances
-        samples = resample(plan.curve, 0.2)
-        d = signed_distances(plan.to_3d(samples), opposing, search_radius=4.0) - wire["d_mm"] / 2
+        pts, _ = plan.world(0.2)
+        d = signed_distances(pts, opposing, search_radius=4.0) - wire["d_mm"] / 2
         occl = float(np.min(d)) if np.isfinite(d).any() else None
     (out / "plan.json").write_text(json.dumps({
         "wire": wire, "style": plan.style, "length_mm": plan.total_length,
@@ -106,10 +137,12 @@ def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_o
                   "v": plan.e_v.tolist(), "normal": plan.normal.tolist()},
         "centers_2d": plan.centers_2d.tolist(),
         "vertices_2d": plan.vertices.tolist(),
-        "centerline_3d": plan.to_3d(plan.vertices).tolist(),
+        "centerline_3d": (plan.to_3d(plan.vertices3[:, :2], plan.vertices3[:, 2]) if plan.is3d
+                          else plan.to_3d(plan.vertices)).tolist(),
+        "canine_step_mm": plan.canine_step,
         "segments_mm": plan.lengths.tolist(),
         "turns_deg": np.degrees(plan.turns).tolist(),
-        "machine_bends_deg": machine_bends(plan.turns).tolist(),
+        "machine_bends_deg": None if plan.is3d else machine_bends(plan.turns).tolist(),
         "steps": steps, "problems": problems, "warnings": plan.warnings,
         "springback": {"source": sb.source, "calibrated": sb.calibrated},
     }, indent=1))
@@ -204,6 +237,9 @@ def main(argv=None):
                    help="mm to stand the wire off the teeth (negative presses it in)")
     p.add_argument("--gingival", type=float, default=0.0,
                    help="mm to move the clicks toward the gingiva (negative: toward the incisal)")
+    p.add_argument("--canine-step", type=float, default=0.0,
+                   help="3D: drop the wire this many mm toward the gingiva onto each canine; the canine "
+                        "clicks are then where it lands (needs the roll motor)")
     hook_args(p)
     common(p)
 
@@ -268,7 +304,7 @@ def main(argv=None):
         _, problems, text = run_plan(picks, wire, machine, sb, a.out, mesh=mesh,
                                      style=style, contact_offset=a.contact_offset, hooks=hooks,
                                      opposing=load_stl(a.opposing) if a.opposing else None,
-                                     gingival=a.gingival)
+                                     gingival=a.gingival, canine_step=a.canine_step)
     print(text)
     return 1 if problems else 0
 

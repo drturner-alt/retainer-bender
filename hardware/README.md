@@ -190,3 +190,17 @@ Repeat for every new wire lot, and whenever you change the pins or die.
 The arm makes about 1 N·m and the pin pinches. Keep fingers off the deck
 whenever the machine is powered. Send `PIN DOWN` then `OFF` before reaching in to load wire,
 and wire the E-stop so it cuts motor power, not just the signal.
+
+## 3D (gingival steps): status
+
+The software can plan a stepped wire and simulate building it with a fourth
+motor that rolls the wire (`retainer_bender/machine3d.py`). That simulation
+shows the current bend head can't make steps this close to the curves around
+the canines.
+
+The pin pushes the wire 10 mm from the die, so it has to push on wire that's
+already bent. During a step that wire stands out of the bending plane, and
+pushing it there would twist the wire in the clamp rather than bend it.
+Bringing the pin in to 6 mm (a NEMA 17 + 10:1 gearbox with an 8 mm shaft) is
+still not close enough. Options are being weighed before more hardware is
+designed.

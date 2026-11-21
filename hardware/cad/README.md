@@ -32,7 +32,7 @@ re-run the script. It re-checks for collisions every time.
 |---|---|---|
 | `housing.stl` | Rigid 10K | The deck. Arc slot for the bend pin; nut pockets underneath for the tongue screws; holes for the guide rods |
 | `arm_disc.stl` | Rigid 10K | Keyed onto the shaft, two M4 set screws with captured nuts. Ream the pin bore to 3.0 mm |
-| `lift_ring.stl` | Tough 2000 | Slides on two 3 × 20 dowels; the servo horn lifts its rear tab |
+| `lift_ring.stl` | Tough 2000 | Slides on two 3 × 24 dowels; the servo horn lifts a pad on its rear riser |
 | `servo_bracket.stl` | Tough 2000 | MG90S on its side; two M4 screws into the top plate |
 | `die_tongue_032.stl` / `_028.stl` | Rigid 10K | One per wire size. Holds the two 3 × 8 die pins and the guide tube. Fine for first tests; have it made in steel for daily use |
 | `tube_clamp_032.stl` / `_028.stl` | Tough 2000 | Clamps the guide tube; shares the tongue's four M3 screws |
@@ -41,7 +41,7 @@ Wash, then fully post-cure in Form Cure before assembly.
 
 ## Extra hardware for these parts
 
-- Hardened dowel pins: one 3 × 24 (bend pin), two 3 × 8 (die pins), two 3 × 20 (guide rods)
+- Hardened dowel pins: one 3 × 26 (bend pin), two 3 × 8 (die pins), two 3 × 24 (guide rods)
 - M3 × 16 screws and nuts (4), M4 × 10 screws (6), M4 set screws and nuts (2)
 - 3.0 mm hand reamer, for the arm disc's pin bore
 

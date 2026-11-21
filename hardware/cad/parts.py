@@ -34,9 +34,10 @@ KEY_W = 5.0                    # key width (VERIFY: 5 x 5 key for a 14 mm shaft)
 KEY_HUB_DEPTH = 2.3            # keyway depth in the hub beyond the shaft surface
 SHAFT_TOP = 28.0               # shaft tip above the top plate (VERIFY: 34 mm shaft, 6 mm plate)
 PIN_D = 3.0                    # bend pin and die pins: hardened dowel pins
-PIN_L = 24.0                   # bend pin length (3 x 24 dowel)
+PIN_L = 26.0                   # bend pin length (3 x 26 dowel)
 DIE_PIN_L = 8.0                # die pins (3 x 8 dowel)
-GUIDE_ROD_D = 3.0              # lift ring guide rods (3 x 20 dowel)
+GUIDE_ROD_D = 3.0              # lift ring guide rods (3 x 24 dowel)
+GUIDE_ROD_L = 24.0
 M3_CLEAR, M3_NUT_AF, M3_NUT_T = 3.4, 5.6, 2.6
 M4_CLEAR, M4_NUT_AF, M4_NUT_T = 4.5, 7.2, 3.4
 TUBE_OD = {"032": 0.042 * 25.4, "028": 0.050 * 25.4, "026": 0.050 * 25.4}   # McMaster 5560K49 / 8988K43
@@ -52,18 +53,19 @@ ARM_Z0, ARM_Z1 = 17.0, 27.0    # arm disc
 SLAB_Z0, SLAB_Z1 = 29.0, 33.0  # housing top slab (the deck)
 TONGUE_T = 5.0
 TONGUE_TOP = SLAB_Z1 + TONGUE_T            # the wire rests here
-PIN_TRAVEL = 2.0
+PIN_TRAVEL = 3.2              # raised pin top 2.8 mm over the wire's underside: room for a 2 mm canine step
 PIN_DOWN_TOP = TONGUE_TOP - 0.4            # just under the wire
 RING_TOP_DOWN = PIN_DOWN_TOP - PIN_L       # lift ring top face, pin down
 RING_T = 4.0
+LIFT_PAD_Z0 = 13.0             # underside of the pad the servo horn pushes, pin down
 
 # ---- housing ------------------------------------------------------------
-HOUSING_X = (-60.0, 40.0)
+HOUSING_X = (-70.0, 40.0)
 HOUSING_Y = (-35.0, 35.0)
 WALL = 4.0
 TONGUE_SCREWS = [(-18.0, 6.0), (-18.0, -6.0), (-32.0, 6.0), (-32.0, -6.0)]
 GUIDE_RODS = [(0.0, 20.0), (0.0, -20.0)]
-HOUSING_SCREWS = [(-65.0, 24.0), (-65.0, -24.0), (45.0, 24.0), (45.0, -24.0)]   # outside ears
+HOUSING_SCREWS = [(-75.0, 24.0), (-75.0, -24.0), (45.0, 24.0), (45.0, -24.0)]   # outside ears
 
 # ---- aluminium top plate (drilled to a printed template) ------------------
 PLATE = (-210.0, 90.0, -75.0, 75.0)   # x0, x1, y0, y1: 300 x 150 mm; the feed stage sits behind (-x)
@@ -74,7 +76,7 @@ SERVO_BRACKET_SCREWS = None     # filled in below from the servo geometry
 
 # ---- servo (MG90S; VERIFY against the one you buy) ----------------------
 SERVO_BODY = (22.8, 12.2, 22.7)   # length (x), width (z), height (y, below the horn)
-SERVO_AXIS = (-32.0, 6.8)         # horn axis (x, z); the axis runs along y
+SERVO_AXIS = (-38.0, 10.2)        # horn axis (x, z); the axis runs along y
 SERVO_FACE_Y = -6.5               # servo top face (horn side); the horn sits just past it
 SERVO_HORN = (14.0, 2.0, 5.0)     # horn arm length from the axis, thickness, width (VERIFY)
 SERVO_HORN_GAP = 4.5              # top face to the horn's far face
@@ -141,8 +143,11 @@ def lift_ring():
     part = cyl(ARM_R + 3.0, z0, z1) - cyl(SHAFT_D / 2 + 1.5, z0 - 1, z1 + 1)
     for gx, gy in GUIDE_RODS:
         part += cyl(4.0, z0, z1, gx, gy) + box(-4, 4, min(0, gy), max(0, gy), z0, z1)
-    part += box(-24.0, -ARM_R, -4.0, 4.0, z0, z1)        # rear tab for the servo horn
-    part += cyl(4.0, z0, z1, -24.0, 0.0)
+    # rear tab: out at ring level, up a riser clear of the arm disc, then a
+    # pad the servo horn lifts from below
+    part += box(-20.0, -ARM_R, -4.0, 4.0, z0, z1)
+    part += box(-20.0, -16.0, -4.0, 4.0, z0, LIFT_PAD_Z0 + 3.0)
+    part += box(-30.0, -16.0, -4.0, 4.0, LIFT_PAD_Z0, LIFT_PAD_Z0 + 3.0)
     for gx, gy in GUIDE_RODS:
         part -= cyl(GUIDE_ROD_D / 2 + 0.15, z0 - 1, z1 + 1, gx, gy)
     part -= cyl(SHAFT_D / 2 + 1.5, z0 - 1, z1 + 1)
@@ -271,8 +276,8 @@ def bought_parts(wire="032", pin_up=False, horn_deg=0.0, arm_deg=0.0):
                         x=ARM_R * math.cos(math.radians(arm_deg)), y=ARM_R * math.sin(math.radians(arm_deg))),
         "die pin +": cyl(PIN_D / 2, TONGUE_TOP + 3.0 - DIE_PIN_L, TONGUE_TOP + 3.0, 0, y),
         "die pin -": cyl(PIN_D / 2, TONGUE_TOP + 3.0 - DIE_PIN_L, TONGUE_TOP + 3.0, 0, -y),
-        "guide rod +": cyl(GUIDE_ROD_D / 2, SLAB_Z0 - 0.5 - 20, SLAB_Z0 - 0.5, *GUIDE_RODS[0]),
-        "guide rod -": cyl(GUIDE_ROD_D / 2, SLAB_Z0 - 0.5 - 20, SLAB_Z0 - 0.5, *GUIDE_RODS[1]),
+        "guide rod +": cyl(GUIDE_ROD_D / 2, SLAB_Z0 - 0.5 - GUIDE_ROD_L, SLAB_Z0 - 0.5, *GUIDE_RODS[0]),
+        "guide rod -": cyl(GUIDE_ROD_D / 2, SLAB_Z0 - 0.5 - GUIDE_ROD_L, SLAB_Z0 - 0.5, *GUIDE_RODS[1]),
         "servo body": box(ax - (L - SERVO_SHAFT_FROM_END), ax + SERVO_SHAFT_FROM_END,
                           SERVO_FACE_Y - H, SERVO_FACE_Y, az - W / 2, az + W / 2),
         "servo horn": horn,
@@ -303,7 +308,7 @@ def clash_check(wire="032"):
     for pin_up in (False, True):
         lift = PIN_TRAVEL if pin_up else 0.0
         # horn raised just far enough to lift the ring (tip rises by the gap plus the lift)
-        gap = (RING_TOP_DOWN - RING_T) - (SERVO_AXIS[1] + SERVO_HORN[2] / 2)
+        gap = LIFT_PAD_Z0 - (SERVO_AXIS[1] + SERVO_HORN[2] / 2)
         horn_deg = math.degrees(math.asin(min(1.0, (lift + gap) / SERVO_HORN[0]))) if pin_up else 0.0
         # the arm turns the pin round with it: the pin is raised beside the
         # wire (here 30 degrees), never in line with it

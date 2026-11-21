@@ -16,24 +16,24 @@
 <circle cx="186.43" cy="98.57" r="2.75" fill="none" stroke="#000" stroke-width="0.25"/>
 <path d="M184.93,98.57h3M186.43,97.07v3" stroke="#000" stroke-width="0.2"/>
 <text x="190.18" y="97.57" font-size="2.2">gearbox M5 (VERIFY)</text>
-<circle cx="145.00" cy="51.00" r="1.65" fill="none" stroke="#000" stroke-width="0.25"/>
-<path d="M143.50,51.00h3M145.00,49.50v3" stroke="#000" stroke-width="0.2"/>
-<text x="147.65" y="50.00" font-size="2.2">housing M4 tap</text>
-<circle cx="145.00" cy="99.00" r="1.65" fill="none" stroke="#000" stroke-width="0.25"/>
-<path d="M143.50,99.00h3M145.00,97.50v3" stroke="#000" stroke-width="0.2"/>
-<text x="147.65" y="98.00" font-size="2.2">housing M4 tap</text>
+<circle cx="135.00" cy="51.00" r="1.65" fill="none" stroke="#000" stroke-width="0.25"/>
+<path d="M133.50,51.00h3M135.00,49.50v3" stroke="#000" stroke-width="0.2"/>
+<text x="137.65" y="50.00" font-size="2.2">housing M4 tap</text>
+<circle cx="135.00" cy="99.00" r="1.65" fill="none" stroke="#000" stroke-width="0.25"/>
+<path d="M133.50,99.00h3M135.00,97.50v3" stroke="#000" stroke-width="0.2"/>
+<text x="137.65" y="98.00" font-size="2.2">housing M4 tap</text>
 <circle cx="255.00" cy="51.00" r="1.65" fill="none" stroke="#000" stroke-width="0.25"/>
 <path d="M253.50,51.00h3M255.00,49.50v3" stroke="#000" stroke-width="0.2"/>
 <text x="257.65" y="50.00" font-size="2.2">housing M4 tap</text>
 <circle cx="255.00" cy="99.00" r="1.65" fill="none" stroke="#000" stroke-width="0.25"/>
 <path d="M253.50,99.00h3M255.00,97.50v3" stroke="#000" stroke-width="0.2"/>
 <text x="257.65" y="98.00" font-size="2.2">housing M4 tap</text>
-<circle cx="158.10" cy="86.50" r="1.65" fill="none" stroke="#000" stroke-width="0.25"/>
-<path d="M156.60,86.50h3M158.10,85.00v3" stroke="#000" stroke-width="0.2"/>
-<text x="160.75" y="85.50" font-size="2.2">servo bracket M4 tap</text>
-<circle cx="186.90" cy="86.50" r="1.65" fill="none" stroke="#000" stroke-width="0.25"/>
-<path d="M185.40,86.50h3M186.90,85.00v3" stroke="#000" stroke-width="0.2"/>
-<text x="189.55" y="85.50" font-size="2.2">servo bracket M4 tap</text>
+<circle cx="152.10" cy="86.50" r="1.65" fill="none" stroke="#000" stroke-width="0.25"/>
+<path d="M150.60,86.50h3M152.10,85.00v3" stroke="#000" stroke-width="0.2"/>
+<text x="154.75" y="85.50" font-size="2.2">servo bracket M4 tap</text>
+<circle cx="180.90" cy="86.50" r="1.65" fill="none" stroke="#000" stroke-width="0.25"/>
+<path d="M179.40,86.50h3M180.90,85.00v3" stroke="#000" stroke-width="0.2"/>
+<text x="183.55" y="85.50" font-size="2.2">servo bracket M4 tap</text>
 <path d="M5.0,75.0H295.0" stroke="#c0392b" stroke-width="0.3" stroke-dasharray="2 1"/>
 <text x="5.0" y="73.5" font-size="2.5" fill="#c0392b">wire line, feed direction left to right: the feed stage mounts here, behind the head (holes once the stage is measured)</text>
 <text x="218.0" y="87.0" font-size="2.5" fill="#c0392b">bend head</text>

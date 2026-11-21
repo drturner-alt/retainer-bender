@@ -145,7 +145,9 @@ def jig_stl(plan, path, plate_mm=2.0, wall_mm=1.2, slack_mm=0.12):
     d = plan.wire["d_mm"]
     path2d = g.resample(plan.curve, 0.25)
     half = d / 2 + slack_mm
-    top = plate_mm + 0.8 * d
+    # a stepped wire is laid steps-up: it rests on its middle run and the
+    # walls are tall enough to hold the raised ends too
+    top = plate_mm + 0.8 * d + getattr(plan, "canine_step", 0.0)
     lo = path2d.min(0) - 4
     hi = path2d.max(0) + 4
     parts = [_box((lo[0], lo[1], 0), (hi[0], hi[1], plate_mm)),
@@ -161,8 +163,7 @@ def wire_stl(plan, path, sides=16, step=0.2):
     model before printing an overlay clear retainer so the retainer clears
     the wire.
     """
-    c2 = g.resample(plan.curve, step)
-    c3 = plan.to_3d(c2)
+    c3, _ = plan.world(step)
     r = plan.wire["d_mm"] / 2
     t = np.gradient(c3, axis=0)
     t /= np.linalg.norm(t, axis=1, keepdims=True)

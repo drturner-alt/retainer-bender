@@ -14,5 +14,19 @@
   "max_segment_mm": 6.0,
   "max_bend_deg": 45.0,
   "path_tolerance_mm": 0.04,
-  "die_halfwidth_mm": 3.5
+  "die_halfwidth_mm": 3.5,
+  "deck_x0_mm": -70.0,
+  "deck_x1_mm": 40.0,
+  "deck_halfwidth_mm": 35.0,
+  "plate_depth_mm": 38.0,
+  "pin_up_top_mm": 2.8,
+  "deck_drop_mm": 5.0,
+  "tongue_tail_halfwidth_mm": 9.0,
+  "clamp_box_mm": [
+    -37.0,
+    -13.0,
+    10.0,
+    4.5
+  ],
+  "pin_down_drop_mm": 0.4
 }

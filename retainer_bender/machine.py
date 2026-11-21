@@ -47,6 +47,16 @@ class Machine:
     body_start_mm: float = 0.5
     body_halfwidth_mm: float = 3.5
     clearance_mm: float = 0.15
+    deck_x0_mm: float = -70.0          # deck (housing) footprint around the die
+    deck_x1_mm: float = 40.0
+    deck_halfwidth_mm: float = 35.0
+    deck_drop_mm: float = 5.0          # deck surface below the wire's underside (the die tongue's thickness)
+    tongue_tail_halfwidth_mm: float = 9.0   # die tongue behind x = -11
+    clamp_box_mm: tuple = (-37.0, -13.0, 10.0, 4.5)   # tube clamp: x0, x1, half-width, top above wire centre
+    pin_down_drop_mm: float = 0.4      # lowered pin top below the wire's underside
+    plate_depth_mm: float = 38.0       # top plate below the wire line
+    pin_up_top_mm: float = 2.8         # raised pin top above the wire's underside
+    max_push_height_mm: float = 0.3    # pin must meet the wire this close to the bending plane
     min_segment_mm: float = 1.0
     max_segment_mm: float = 6.0
     max_bend_deg: float = 45.0

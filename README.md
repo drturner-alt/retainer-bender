@@ -104,6 +104,15 @@ the 3-click design instead. Open `demo/preview.svg` and read
   springback table. It also checks feed travel, arm reach, and that the free
   end never swings into the guide.
 
+`--canine-step 1.5` (3D, in development) plans a gingival step onto each canine
+so the wire can't roll while it's bonded. The canine clicks become where the
+wire lands, and the run across the incisors stays at the midline click's
+height. Each step is a straight ramp down and lingually along the canine
+slope, joined by two bends in one plane. The planner and the 3D machine
+simulation are done; the current bend head can't make these steps (see
+"3D" in hardware/README.md), so the simulation will report problems for
+stepped wires.
+
 `--gingival 1.0` slides every click 1 mm toward the gingiva along its tooth
 before planning; a negative value moves the wire toward the incisal edges.
 `--style polyline` makes straight runs between picks instead of a smooth curve.
