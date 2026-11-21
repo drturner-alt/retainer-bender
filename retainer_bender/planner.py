@@ -67,6 +67,10 @@ class Plan:
     curve_w: np.ndarray | None = None    # height of the dense curve off the plane (3D wires)
     vertices3: np.ndarray | None = None  # bend points (u, v, w) for 3D wires
     canine_step: float = 0.0
+    prefinish: np.ndarray | None = None   # flat wire the machine bends before finishing (2D vertices)
+    prefinish_dense: np.ndarray | None = None
+    finish: list | None = None            # where to joggle and elbow, measured from each end
+    finish_step: float = 0.0
 
     @property
     def is3d(self):
@@ -370,6 +374,115 @@ def _side(hi, low, c, inset, step_w, margin, tan_max):
     return path, b + margin, (np.append(P, wl), np.append(A, wl), np.append(B, 0.0), np.append(Q, 0.0))
 
 
+def _embrasure(hi, c, origin, e_u, e_v, mesh, window=(1.5, 6.5)):
+    """Arc position (on `hi`, oriented from this end) of the lateral-canine
+    embrasure: where, a little in from the canine click, the wire stands
+    furthest off the teeth."""
+    from .mesh import signed_distances
+    sh = g.arc_lengths(hi)
+    xs = np.arange(c + window[0], min(c + window[1], sh[-1] - 1.0), 0.1)
+    if len(xs) < 3 or mesh is None:
+        return c + 3.0, None
+    pts = np.array([_at(hi, sh, x) for x in xs])
+    d = signed_distances(origin + pts[:, :1] * e_u + pts[:, 1:2] * e_v, mesh)
+    d = np.where(np.isfinite(d), d, -np.inf)
+    i = int(np.argmax(d))
+    return float(xs[i]), float(d[i])
+
+
+def elbow_ends(curve, ends2d, picks_world, gum_world, step, leg_range, gum_gap, up_sign,
+               machine, origin, e_u, e_v, normal, r, mesh, margin=0.5):
+    """Canine ends as a 0.75 mm gingival step at the lateral-canine embrasure,
+    then a 90 degree elbow toward the gingiva at the canine click (mid-crown)
+    with a short leg running down the canine's lingual surface.
+
+    Returns the finished 3D wire, the flat wire the machine bends (step and
+    elbow unfolded, same length), the points where vertices must fall on
+    each, where to joggle and elbow measured from each end, and warnings.
+    """
+    warnings = []
+    wl = -up_sign * step
+    low3 = np.column_stack([curve, np.full(len(curve), wl)])
+    if mesh is not None:
+        low3, _ = push_clear(low3, origin, e_u, e_v, r, mesh, normal=normal)
+    low = low3[:, :2]
+    tan_max = np.tan(np.radians(35.0))
+    s = g.arc_lengths(curve)
+    i0 = int(np.argmin(np.linalg.norm(curve - ends2d[0], axis=1)))
+    i1 = int(np.argmin(np.linalg.norm(curve - ends2d[1], axis=1)))
+    up = up_sign * normal
+
+    sides = []
+    for k, (hi_k, low_k, c) in enumerate(((curve, low, s[i0]),
+                                          (curve[::-1], low[::-1], s[-1] - s[i1]))):
+        emb, gap = _embrasure(hi_k, c, origin, e_u, e_v, mesh)
+        path, x_resume, (P, A, B, Q) = _side(hi_k, low_k, c, emb - c, wl, margin, tan_max)
+        # elbow at the start of the lowered run (the canine click), leg toward the gingiva
+        K = path[0]
+        Kw = origin + K[0] * e_u + K[1] * e_v + K[2] * normal
+        n_s = picks_world[k][1]
+        down = -up - np.dot(-up, n_s) * n_s
+        down /= np.linalg.norm(down)
+        leg = leg_range[1]
+        if gum_world[k] is not None:
+            room = float(np.dot(gum_world[k] - Kw, down)) - r
+            leg = float(np.clip(room - gum_gap, *leg_range))
+            if room - leg < gum_gap - 0.05:
+                warnings.append(f"{'first' if k == 0 else 'second'} canine: only {room:.1f} mm from the "
+                                f"elbow to the gingiva; a {leg:.1f} mm leg leaves {room - leg:.1f} mm")
+        # tilt the leg off the tooth until it clears along its whole length
+        # (a convex canine bulges toward the cingulum under a straight leg)
+        from .mesh import signed_distances
+        tilt = 0.0
+        for tilt in np.arange(0.0, 41.0, 1.0):
+            a = np.radians(tilt)
+            dir_w = np.cos(a) * down + np.sin(a) * n_s
+            dir_w /= np.linalg.norm(dir_w)
+            ts = np.linspace(0.2, 1.0, 9) * leg
+            dd = signed_distances(Kw + np.outer(ts, dir_w), mesh) - r if mesh is not None else np.zeros(1)
+            if not np.isfinite(dd).any() or np.nanmin(np.where(np.isfinite(dd), dd, np.nan)) >= 0.02:
+                break
+        else:
+            warnings.append(f"{'first' if k == 0 else 'second'} canine: the leg still touches the tooth "
+                            "even tilted 40 degrees off it")
+        g_uvw = np.array([dir_w @ e_u, dir_w @ e_v, dir_w @ normal])
+        run_dir = path[min(len(path) - 1, int(1.0 / 0.02))] - path[0]
+        run_dir /= np.linalg.norm(run_dir)
+        elbow_deg = float(np.degrees(np.arccos(np.clip(np.dot(-run_dir, g_uvw), -1, 1))))
+        leg_pts = K + np.outer(np.linspace(1, 0, max(2, int(leg / 0.02) + 1)), g_uvw * leg)
+        final = np.vstack([leg_pts, path[1:]])
+        # the flat version: leg straight on, joggle undone (lengths kept)
+        d2 = (Q[:2] - P[:2]) / np.linalg.norm(Q[:2] - P[:2])
+        A_pre = B[:2] - d2 * np.linalg.norm(B - A)
+        T = A_pre - A[:2]
+        sl = g.arc_lengths(path[:, :2])
+        iA = int(np.argmin(np.linalg.norm(path - A, axis=1)))
+        before = path[:iA + 1, :2] + T
+        t_out = before[0] - before[min(10, len(before) - 1)]
+        t_out /= np.linalg.norm(t_out)
+        leg_flat = before[0] + np.outer(np.linspace(leg, 0, max(2, int(leg / 0.02) + 1)), t_out)
+        flat = np.vstack([leg_flat, before[1:], _line(A_pre, B[:2])[1:], path[np.argmin(np.linalg.norm(path - B, axis=1)) + 1:, :2]])
+        fl = g.arc_lengths(flat)
+        marks = {"elbow_mm": leg,
+                 "joggle_from_mm": float(fl[len(leg_flat) - 1 + iA]),
+                 "joggle_to_mm": float(fl[len(leg_flat) - 1 + iA] + np.linalg.norm(B - A)),
+                 "joggle_offset_mm": float(np.linalg.norm((B - A) - np.append(d2, 0) * np.dot(B - A, np.append(d2, 0)))),
+                 "embrasure_gap_mm": gap, "leg_mm": leg, "elbow_deg": 180.0 - elbow_deg,
+                 "leg_tilt_deg": float(tilt)}
+        sides.append((final, flat, x_resume, marks, [K, A, B], [before[0], A_pre, B[:2]]))
+
+    x_head = sides[0][2]
+    x_tail = s[-1] - sides[1][2]
+    if x_head >= x_tail:
+        raise SystemExit("the two canine ends overlap")
+    mid = _piece(np.column_stack([curve, np.zeros(len(curve))]), s, x_head, x_tail)
+    final = g.resample(np.vstack([sides[0][0], mid[1:], sides[1][0][::-1][1:]]), 0.02)
+    flat = g.resample(np.vstack([sides[0][1], mid[1:, :2], sides[1][1][::-1][1:]]), 0.02)
+    cuts3 = [int(np.argmin(np.linalg.norm(final - p, axis=1))) for p in sides[0][4] + sides[1][4]]
+    cuts2 = [int(np.argmin(np.linalg.norm(flat - p, axis=1))) for p in sides[0][5] + sides[1][5]]
+    return final, flat, cuts3, cuts2, [sides[0][3], sides[1][3]], warnings
+
+
 def make_steps(curve, ends2d, step, inset, up_sign, machine, origin, e_u, e_v, normal, r, mesh,
                margin=1.0):
     """Put a gingival step at each canine, the way it would be bent by hand.
@@ -408,9 +521,18 @@ def make_steps(curve, ends2d, step, inset, up_sign, machine, origin, e_u, e_v, n
 
 
 def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=None, resolve=True,
-              hooks=None, gingival=0.0, canine_step=0.0, step_inset=2.5):
+              hooks=None, gingival=0.0, canine_step=0.0, step_inset=2.5, ends="curl",
+              elbow_step=0.75, leg_range=(1.0, 1.5), gum_gap=2.0):
     r = wire["d_mm"] / 2
     warnings = []
+    gum = [None, None]
+    if len(picks) == 5 and style == "auto":
+        # optional clicks 4 and 5: the gingival margin under each canine
+        gum = [picks[3].p, picks[4].p]
+        picks = picks[:3]
+    if ends == "elbow":
+        hooks = None
+        canine_step = 0.0
 
     normals = []
     for pk in picks:
@@ -434,7 +556,8 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
     C3 = P + (np.array(normals) * (r + contact_offset) if have_normals else 0.0)
 
     up_sign = 1.0
-    if canine_step:
+    lift = canine_step if canine_step else (elbow_step if ends == "elbow" else 0.0)
+    if lift:
         if not have_normals:
             raise SystemExit("a canine step needs click normals (use the picker)")
         # The canine clicks are where the wire lands, a step below the run
@@ -444,8 +567,8 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
         _, n0 = g.fit_plane(C3)
         up0 = n0 if np.dot(np.mean(normals, axis=0), n0) > 0 else -n0
         C3 = C3.copy()
-        C3[0] += canine_step * up0
-        C3[-1] += canine_step * up0
+        C3[0] += lift * up0
+        C3[-1] += lift * up0
 
     origin, normal = g.fit_plane(C3)
     chord = C3[-1] - C3[0]
@@ -484,7 +607,8 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
 
     if style == "auto":
         if len(picks) != 3 or mesh is None:
-            raise SystemExit("auto design needs exactly three clicks (43, midline, 33) and the scan")
+            raise SystemExit("auto design needs three clicks (43, midline, 33), or five with the two "
+                             "gum clicks, and the scan")
         found, outline, w2 = lingual_outline(mesh, origin, e_u, e_v, normal, contacts[0],
                                              contacts[1], contacts[2], r + contact_offset, r)
         warnings += w2
@@ -514,7 +638,24 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
                             "curve between picks would have cut into them")
 
     curve_w = None
-    if canine_step:
+    prefinish = prefinish_dense = finish = None
+    if ends == "elbow":
+        if not have_normals or mesh is None:
+            raise SystemExit("elbow ends need the scan and click normals (use the picker)")
+        pw = [(picks[0].p, normals[0]), (picks[-1].p, normals[-1])]
+        final, flat, cuts3, cuts2, finish, w2 = elbow_ends(
+            curve, ends2d, pw, gum, elbow_step, leg_range, gum_gap, up_sign, machine,
+            origin, e_u, e_v, normal, r, mesh)
+        warnings += w2
+        pidx, _ = g.fit_polyline_pieces(flat, cuts2, machine.path_tolerance_mm,
+                                        machine.min_segment_mm, machine.max_segment_mm)
+        prefinish = flat[pidx]
+        prefinish_dense = flat
+        curve_w = final[:, 2].copy()
+        idx, err = g.fit_polyline_pieces(final, cuts3, machine.path_tolerance_mm,
+                                         machine.min_segment_mm, machine.max_segment_mm)
+        curve = final
+    elif canine_step:
         curve, curve_w, cuts, w2 = make_steps(curve, ends2d, canine_step, step_inset, up_sign,
                                               machine, origin, e_u, e_v, normal, r,
                                               mesh if resolve else None)
@@ -552,7 +693,9 @@ def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=Non
                 labels=[pk.label for pk in picks], contacts_2d=contacts, centers_2d=uv,
                 out_of_plane=off, curve=curve, vertices=vertices, lengths=lengths,
                 turns=turns, path_error=err, warnings=warnings,
-                curve_w=curve_w, vertices3=vertices3, canine_step=canine_step)
+                curve_w=curve_w, vertices3=vertices3, canine_step=canine_step,
+                prefinish=prefinish, prefinish_dense=prefinish_dense, finish=finish,
+                finish_step=elbow_step if finish else 0.0)
 
 
 def push_clear(curve, origin, e_u, e_v, r, mesh, step=0.2, iters=20, sigma=0.4, normal=None,

@@ -73,9 +73,13 @@ def preview_svg(plan, path, mesh=None, built=None, clearance_info=None, scale=25
 
 
 def template_svg(plan, path):
-    """True-size drawing to print at 100% and lay the bent wire on."""
-    lo = plan.curve.min(0) - 8
-    hi = plan.curve.max(0) + 8
+    """True-size drawing to print at 100% and lay the bent wire on. For wires
+    finished after bending (elbow ends) it shows the flat wire as it comes
+    off the machine, with the joggle and elbow marks."""
+    flat = getattr(plan, "prefinish_dense", None)
+    line = flat if flat is not None else plan.curve
+    lo = line.min(0) - 8
+    hi = line.max(0) + 8
     W, H = hi - lo
     H += 14
 
@@ -86,10 +90,27 @@ def template_svg(plan, path):
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.2f}mm" height="{H:.2f}mm" '
            f'viewBox="0 0 {W:.3f} {H:.3f}" font-family="sans-serif">',
            '<rect width="100%" height="100%" fill="#fff"/>',
-           f'<path d="{_path(plan.curve, fx)}" stroke="#000" stroke-width="{d + 0.3:.3f}" '
+           f'<path d="{_path(line, fx)}" stroke="#000" stroke-width="{d + 0.3:.3f}" '
            f'fill="none" stroke-linecap="butt"/>',
-           f'<path d="{_path(plan.curve, fx)}" stroke="#fff" stroke-width="{d - 0.2:.3f}" '
+           f'<path d="{_path(line, fx)}" stroke="#fff" stroke-width="{d - 0.2:.3f}" '
            f'fill="none" stroke-linecap="butt"/>']
+    if flat is not None and plan.finish:
+        sarc = g.arc_lengths(flat)
+        n = g.left_normals(flat)
+        def mark(x, label, color):
+            i = int(np.clip(np.searchsorted(sarc, x), 0, len(flat) - 1))
+            a = flat[i] + n[i] * 1.6
+            b = flat[i] - n[i] * 1.6
+            out.append(f'<path d="M{fx(a)[0]:.2f},{fx(a)[1]:.2f}L{fx(b)[0]:.2f},{fx(b)[1]:.2f}" '
+                       f'stroke="{color}" stroke-width="0.25"/>')
+            t = flat[i] + n[i] * 2.6
+            out.append(f'<text x="{fx(t)[0]:.2f}" y="{fx(t)[1]:.2f}" font-size="1.4" '
+                       f'text-anchor="middle" fill="{color}">{label}</text>')
+        for k, f in enumerate(plan.finish):
+            conv = (lambda x: x) if k == 0 else (lambda x: sarc[-1] - x)
+            mark(conv(f["elbow_mm"]), "elbow", "#c0392b")
+            mark(conv(f["joggle_from_mm"]), "J", "#2f6fd6")
+            mark(conv(f["joggle_to_mm"]), "J", "#2f6fd6")
     for q, lab in zip(plan.contacts_2d, plan.labels):
         x, y = fx(q)
         out.append(f'<text x="{x:.2f}" y="{y + 3:.2f}" font-size="1.8" text-anchor="middle">{lab}</text>')
@@ -143,7 +164,8 @@ def jig_stl(plan, path, plate_mm=2.0, wall_mm=1.2, slack_mm=0.12):
     them. Print flat, 0.1-0.15 mm layers.
     """
     d = plan.wire["d_mm"]
-    path2d = g.resample(plan.curve, 0.25)
+    flat = getattr(plan, "prefinish_dense", None)
+    path2d = g.resample(flat if flat is not None else plan.curve, 0.25)
     half = d / 2 + slack_mm
     # a stepped wire is laid steps-up: it rests on its middle run and the
     # walls are tall enough to hold the raised ends too

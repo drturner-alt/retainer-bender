@@ -213,3 +213,27 @@ def test_gingival_moves_the_wire_down_and_keeps_contact(tmp_path):
     _, d, at = clearance(low, tris)
     assert np.min(d[np.isfinite(d)]) > -0.02
     assert np.all(np.abs(at) < 0.08)
+
+
+def test_elbow_ends_fit_and_unfold_to_a_flat_wire_of_the_same_length(tmp_path):
+    from retainer_bender.geometry import arc_lengths
+    from retainer_bender.planner import clearance
+    wire = get_wire("032")
+    tris, pk = _auto_picks()
+    plan, problems, text = run_plan(pk, wire, Machine.load(), Springback.default_for("032"),
+                                    tmp_path, mesh=tris, style="auto", ends="elbow")
+    assert problems == []                      # the flat wire is machine-buildable
+    assert plan.finish and len(plan.finish) == 2
+    for f in plan.finish:
+        assert 1.0 <= f["leg_mm"] <= 1.5
+        assert f["joggle_from_mm"] > f["elbow_mm"]
+        assert 60 <= f["elbow_deg"] <= 120
+    # unfolding the step and elbows keeps the wire's length
+    final_len = arc_lengths(plan.curve3())[-1]
+    flat_len = arc_lengths(plan.prefinish_dense)[-1]
+    assert abs(final_len - flat_len) < 0.05
+    # the finished wire does not press into the teeth and drops at the canines
+    _, d, _ = clearance(plan, tris)
+    assert np.min(d[np.isfinite(d)]) > -0.05
+    assert abs(plan.curve_w[0]) > 0.5 and abs(plan.curve_w[-1]) > 0.5
+    assert "Finishing" in text

@@ -42,12 +42,14 @@ the 3-click design instead. Open `demo/preview.svg` and read
 ## Make a wire
 
 1. **Export** the lower scan from iTero as an STL.
-2. **Click 3 points.** Open `picker/picker.html` in Chrome, load the STL,
-   and with **Auto** selected click:
-   - 43: the lingual, where the wire should end (centre of the bond pad)
-   - the midline: lingual of 41/31, at the height the wire should run (about
-     two-thirds up)
-   - 33: the lingual, where the wire should end
+2. **Click 3 points (or 5).** Open `picker/picker.html` in Chrome, load the
+   STL, and with **Auto** selected click:
+   - 43: the lingual at mid-crown, where the elbow goes
+   - the midline: lingual of 41/31, at the height the wire should run across
+     the incisors
+   - 33: the lingual at mid-crown, where the elbow goes
+   - optionally, the gingival margin straight below each elbow (43, then 33).
+     The legs are then sized to stop 2 mm short of the gingiva.
 
    Click **Download picks.json**. If you'd rather place every contact
    yourself, choose **Every contact** instead and click 43 distal and
@@ -70,6 +72,30 @@ the 3-click design instead. Open `demo/preview.svg` and read
    at the die and snip the 11 mm lead-in off the end that came out first.
 5. **Check the result.** Lay the wire on the printed `template_1to1.svg`,
    drop it into the printed `check_jig.stl`, and try it on the printed model.
+
+## The canine ends (default)
+
+Each end has:
+- a **0.75 mm gingival step** at the lateral–canine embrasure, found as the
+  biggest gap between wire and teeth just in from the canine click. The
+  canine section then runs lower, following the canine's lingual slope.
+- a **90° elbow toward the gingiva** at the canine click (mid-crown), with a
+  **1–1.5 mm leg** down the canine's lingual. The leg is tilted just enough
+  to clear the canine's bulge, so the elbow comes out a few degrees off 90.
+
+The machine bends the wire flat, with the step and elbows unfolded and the
+same total length. You then form the two joggles and the two elbows at the
+marks in the report's "Finishing" section and on `template_1to1.svg`, all
+measured along the wire from each end. `wire.stl` is the finished 3D wire.
+
+Why not bend the steps and elbows on the machine: the bend pin pushes the
+wire 10 mm from the die. To bend out of plane, the machine would roll the
+wire, and the parts already bent would stand up out of the pin's plane;
+pushing them there twists the wire instead of bending it. The 3D simulation
+in `machine3d.py` shows this for every head geometry tried (see
+hardware/README.md).
+
+`--ends curl` gives the older flat curls instead.
 
 ## How the planner works
 

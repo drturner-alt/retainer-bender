@@ -43,16 +43,20 @@
   <p><label><input type="radio" name="mode" value="auto" checked> Auto (3 clicks)</label>
      <label><input type="radio" name="mode" value="manual"> Every contact</label></p>
   <ol class="muted" id="help-auto">
-    <li>43: lingual, where the wire should end (centre of the bond pad)</li>
-    <li>Midline: lingual of 41/31, at the height the wire should run (about two-thirds up)</li>
-    <li>33: lingual, where the wire should end</li>
+    <li>43: lingual, mid-crown, where the elbow should be (the wire lands here, 0.75 mm below the incisor run)</li>
+    <li>Midline: lingual of 41/31, at the height the wire should run across the incisors</li>
+    <li>33: lingual, mid-crown, where the elbow should be</li>
+    <li><i>Optional:</i> 43 gingival margin, straight below the elbow</li>
+    <li><i>Optional:</i> 33 gingival margin, straight below the elbow</li>
   </ol>
   <ol class="muted" id="help-manual" hidden>
     <li>43, distal end of the bond area, then mesial end</li>
     <li>42, 41, 31, 32: where the wire should touch, about two-thirds up the lingual</li>
     <li>33, mesial end, then distal end of the bond area</li>
   </ol>
-  <p class="muted">The three clicks set the wire's plane. The software then finds where the wire touches each incisor.</p>
+  <p class="muted">The three clicks set the wire's plane; the software finds where it touches each incisor.
+  With the two gum clicks the elbow legs are sized to end 2 mm short of the gingiva (1&ndash;1.5 mm long);
+  without them they are 1.5 mm.</p>
   <h1>Points</h1>
   <ol id="list"></ol>
   <button id="undo">Undo</button><button id="clear">Clear</button>
@@ -120,7 +124,7 @@ let down = null;
 renderer.domElement.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY]; });
 renderer.domElement.addEventListener("pointerup", e => {
   if (!mesh || !down || e.button !== 0) return;
-  if (mode === "auto" && picks.length >= 3) { status("Three points picked. Undo to change one."); return; }
+  if (mode === "auto" && picks.length >= 5) { status("All five points picked. Undo to change one."); return; }
   if (Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
   const r = renderer.domElement.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -134,7 +138,7 @@ renderer.domElement.addEventListener("pointerup", e => {
   redraw();
 });
 const ORDER = {
-  auto: ["43", "mid", "33"],
+  auto: ["43", "mid", "33", "43 gum", "33 gum"],
   manual: ["43d", "43m", "42", "41", "31", "32", "33m", "33d"],
 };
 let mode = "auto";
@@ -172,7 +176,9 @@ document.getElementById("undo").onclick = () => { picks.pop(); redraw(); };
 document.getElementById("clear").onclick = () => { picks.length = 0; redraw(); };
 document.getElementById("save").onclick = () => {
   if (picks.length < 3) { status("Pick at least three points first."); return; }
-  if (mode === "auto" && picks.length !== 3) { status("Auto mode needs exactly three points."); return; }
+  if (mode === "auto" && picks.length !== 3 && picks.length !== 5) {
+    status("Auto mode needs three points, or five with the two gum clicks."); return;
+  }
   const blob = new Blob([JSON.stringify({ units: "mm", source: fileName, points: picks }, null, 1)],
                         { type: "application/json" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
