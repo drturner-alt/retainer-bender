@@ -25,7 +25,8 @@ from .wires import get_wire
 def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine, occl=None):
     w = plan.wire
     L = [f"Lower 3-3 lingual retainer, {w['label']} ({w['d_mm']:.3f} mm), style {plan.style}"
-         + (", ends: gingival step at the lateral-canine embrasure + 90 deg elbow toward the gingiva"
+         + ((", ends: gingival step at the lateral-canine embrasure + 90 deg elbow toward the gingiva"
+             if plan.finish_step else ", ends: 90 deg elbow toward the gingiva at each canine (no step)")
             if plan.finish else
             f", 3D with {plan.canine_step:.1f} mm gingival steps onto the canines" if plan.is3d else ""),
          f"Wire length {plan.total_length:.2f} mm, {len(plan.turns)} bends",
@@ -80,10 +81,13 @@ def _report(plan, steps, problems, sb, built_err, raw_err, clr, out, machine, oc
         names = [plan.labels[0], plan.labels[-1]]
         L += ["", "Finishing (after the machine; measure along the wire from each end):"]
         for nm, f in zip(names, plan.finish):
-            L.append(f"  {nm} end: elbow {f['elbow_deg']:.0f} deg toward the gingiva at {f['elbow_mm']:.2f} mm "
-                     f"(leg {f['leg_mm']:.2f} mm); joggle {plan.finish_step:.2f} mm gingival between "
-                     f"{f['joggle_from_mm']:.2f} and {f['joggle_to_mm']:.2f} mm "
-                     f"(total offset {f['joggle_offset_mm']:.2f} mm, down and lingual)")
+            row = (f"  {nm} end: elbow {f['elbow_deg']:.0f} deg toward the gingiva at {f['elbow_mm']:.2f} mm "
+                   f"(leg {f['leg_mm']:.2f} mm)")
+            if f["joggle_from_mm"] is not None:
+                row += (f"; joggle {plan.finish_step:.2f} mm gingival between "
+                        f"{f['joggle_from_mm']:.2f} and {f['joggle_to_mm']:.2f} mm "
+                        f"(total offset {f['joggle_offset_mm']:.2f} mm, down and lingual)")
+            L.append(row)
     L += ["", "Warnings:"] + [f"  - {x}" for x in plan.warnings] if plan.warnings else []
     L += ["", "Machine checks:"] + ([f"  - {x}" for x in problems] if problems else ["  all passed"])
     text = "\n".join(L) + "\n"
@@ -106,10 +110,11 @@ class _NoCorrection:
 
 def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_offset=0.0,
              hooks=Hooks(), opposing=None, occlusion_min=0.5, gingival=0.0, canine_step=0.0,
-             ends="curl"):
+             ends="curl", elbow_step=0.75):
     out.mkdir(parents=True, exist_ok=True)
     plan = plan_wire(picks, wire, machine, style=style, contact_offset=contact_offset, mesh=mesh,
-                     hooks=hooks, gingival=gingival, canine_step=canine_step, ends=ends)
+                     hooks=hooks, gingival=gingival, canine_step=canine_step, ends=ends,
+                     elbow_step=elbow_step)
     if plan.prefinish is not None:
         # the machine bends the flat wire; the step and elbows are formed after
         from .geometry import align_2d, build_polyline, point_to_polyline, segment_lengths, turning_angles
@@ -264,6 +269,8 @@ def main(argv=None):
     p.add_argument("--ends", choices=["elbow", "curl"], default="elbow",
                    help="elbow (default): 0.75 mm gingival step at the lateral-canine embrasure, then a "
                         "90 deg elbow toward the gingiva at the canine click; curl: flat curls")
+    p.add_argument("--elbow-step", type=float, default=0.75,
+                   help="with elbow ends: gingival step at the lateral-canine embrasure in mm (0 = none)")
     p.add_argument("--canine-step", type=float, default=0.0,
                    help="3D: drop the wire this many mm toward the gingiva onto each canine; the canine "
                         "clicks are then where it lands (needs the roll motor)")
@@ -332,7 +339,8 @@ def main(argv=None):
                                      style=style, contact_offset=a.contact_offset, hooks=hooks,
                                      opposing=load_stl(a.opposing) if a.opposing else None,
                                      gingival=a.gingival, canine_step=a.canine_step,
-                                     ends=a.ends if style == "auto" else "curl")
+                                     ends=a.ends if style == "auto" else "curl",
+                                     elbow_step=a.elbow_step)
     print(text)
     return 1 if problems else 0
 

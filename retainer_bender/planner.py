@@ -403,7 +403,7 @@ def elbow_ends(curve, ends2d, picks_world, gum_world, step, leg_range, gum_gap, 
     warnings = []
     wl = -up_sign * step
     low3 = np.column_stack([curve, np.full(len(curve), wl)])
-    if mesh is not None:
+    if mesh is not None and step > 0:
         low3, _ = push_clear(low3, origin, e_u, e_v, r, mesh, normal=normal)
     low = low3[:, :2]
     tan_max = np.tan(np.radians(35.0))
@@ -415,8 +415,17 @@ def elbow_ends(curve, ends2d, picks_world, gum_world, step, leg_range, gum_gap, 
     sides = []
     for k, (hi_k, low_k, c) in enumerate(((curve, low, s[i0]),
                                           (curve[::-1], low[::-1], s[-1] - s[i1]))):
-        emb, gap = _embrasure(hi_k, c, origin, e_u, e_v, mesh)
-        path, x_resume, (P, A, B, Q) = _side(hi_k, low_k, c, emb - c, wl, margin, tan_max)
+        if step > 0:
+            emb, gap = _embrasure(hi_k, c, origin, e_u, e_v, mesh)
+            path, x_resume, (P, A, B, Q) = _side(hi_k, low_k, c, emb - c, wl, margin, tan_max)
+        else:
+            # no step: the wire stays on the teeth at one height all the way to the elbow
+            sh = g.arc_lengths(hi_k)
+            x_resume = min(c + 3.0, sh[-1] / 2)
+            run = _piece(hi_k, sh, c, x_resume)
+            path = np.column_stack([run, np.zeros(len(run))])
+            gap = None
+            P = A = B = Q = None
         # elbow at the start of the lowered run (the canine click), leg toward the gingiva
         K = path[0]
         Kw = origin + K[0] * e_u + K[1] * e_v + K[2] * normal
@@ -451,6 +460,16 @@ def elbow_ends(curve, ends2d, picks_world, gum_world, step, leg_range, gum_gap, 
         elbow_deg = float(np.degrees(np.arccos(np.clip(np.dot(-run_dir, g_uvw), -1, 1))))
         leg_pts = K + np.outer(np.linspace(1, 0, max(2, int(leg / 0.02) + 1)), g_uvw * leg)
         final = np.vstack([leg_pts, path[1:]])
+        if A is None:
+            t_out = path[0, :2] - path[min(10, len(path) - 1), :2]
+            t_out /= np.linalg.norm(t_out)
+            leg_flat = path[0, :2] + np.outer(np.linspace(leg, 0, max(2, int(leg / 0.02) + 1)), t_out)
+            flat = np.vstack([leg_flat, path[1:, :2]])
+            marks = {"elbow_mm": leg, "joggle_from_mm": None, "joggle_to_mm": None,
+                     "joggle_offset_mm": 0.0, "embrasure_gap_mm": None, "leg_mm": leg,
+                     "elbow_deg": 180.0 - elbow_deg, "leg_tilt_deg": float(tilt)}
+            sides.append((final, flat, x_resume, marks, [K], [path[0, :2]]))
+            continue
         # the flat version: leg straight on, joggle undone (lengths kept)
         d2 = (Q[:2] - P[:2]) / np.linalg.norm(Q[:2] - P[:2])
         A_pre = B[:2] - d2 * np.linalg.norm(B - A)

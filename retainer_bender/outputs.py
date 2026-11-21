@@ -109,8 +109,9 @@ def template_svg(plan, path):
         for k, f in enumerate(plan.finish):
             conv = (lambda x: x) if k == 0 else (lambda x: sarc[-1] - x)
             mark(conv(f["elbow_mm"]), "elbow", "#c0392b")
-            mark(conv(f["joggle_from_mm"]), "J", "#2f6fd6")
-            mark(conv(f["joggle_to_mm"]), "J", "#2f6fd6")
+            if f["joggle_from_mm"] is not None:
+                mark(conv(f["joggle_from_mm"]), "J", "#2f6fd6")
+                mark(conv(f["joggle_to_mm"]), "J", "#2f6fd6")
     for q, lab in zip(plan.contacts_2d, plan.labels):
         x, y = fx(q)
         out.append(f'<text x="{x:.2f}" y="{y + 3:.2f}" font-size="1.8" text-anchor="middle">{lab}</text>')

@@ -237,3 +237,17 @@ def test_elbow_ends_fit_and_unfold_to_a_flat_wire_of_the_same_length(tmp_path):
     assert np.min(d[np.isfinite(d)]) > -0.05
     assert abs(plan.curve_w[0]) > 0.5 and abs(plan.curve_w[-1]) > 0.5
     assert "Finishing" in text
+
+
+def test_elbow_without_step_stays_on_the_teeth(tmp_path):
+    from retainer_bender.planner import clearance
+    wire = get_wire("032")
+    tris, pk = _auto_picks()
+    plan, problems, text = run_plan(pk, wire, Machine.load(), Springback.default_for("032"),
+                                    tmp_path, mesh=tris, style="auto", ends="elbow", elbow_step=0.0)
+    assert problems == []
+    assert all(f["joggle_from_mm"] is None for f in plan.finish)
+    _, d, at = clearance(plan, tris)
+    assert np.min(d[np.isfinite(d)]) > -0.05
+    assert np.all(np.abs(at) < 0.08)
+    assert "no step" in text
