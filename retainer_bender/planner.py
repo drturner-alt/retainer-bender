@@ -394,7 +394,7 @@ def _embrasure(hi, c, origin, e_u, e_v, mesh, window=(1.5, 6.5)):
 
 
 def elbow_ends(curve, ends2d, picks_world, gum_world, step, leg_range, gum_gap, up_sign,
-               machine, origin, e_u, e_v, normal, r, mesh, margin=0.5, bend_deg=75.0):
+               machine, origin, e_u, e_v, normal, r, mesh, margin=0.5, bend_deg=60.0):
     """Canine ends as a 0.75 mm gingival step at the lateral-canine embrasure,
     then a 90 degree elbow toward the gingiva at the canine click (mid-crown)
     with a short leg running down the canine's lingual surface.
@@ -553,7 +553,7 @@ def make_steps(curve, ends2d, step, inset, up_sign, machine, origin, e_u, e_v, n
 
 def plan_wire(picks, wire, machine, style="smooth", contact_offset=0.0, mesh=None, resolve=True,
               hooks=None, gingival=0.0, canine_step=0.0, step_inset=2.5, ends="curl",
-              elbow_step=0.75, leg_range=(1.0, 1.5), gum_gap=2.0, elbow_deg=75.0, elbow_distal=1.0):
+              elbow_step=0.75, leg_range=(1.0, 2.0), gum_gap=2.0, elbow_deg=60.0, elbow_distal=1.0):
     r = wire["d_mm"] / 2
     warnings = []
     gum = [None, None]

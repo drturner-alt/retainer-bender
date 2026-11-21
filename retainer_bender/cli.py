@@ -111,11 +111,12 @@ class _NoCorrection:
 
 def run_plan(picks, wire, machine, sb, out, mesh=None, style="smooth", contact_offset=0.0,
              hooks=Hooks(), opposing=None, occlusion_min=0.5, gingival=0.0, canine_step=0.0,
-             ends="curl", elbow_step=0.75, elbow_deg=75.0, elbow_distal=1.0):
+             ends="curl", elbow_step=0.75, elbow_deg=60.0, elbow_distal=1.0, leg=2.0):
     out.mkdir(parents=True, exist_ok=True)
     plan = plan_wire(picks, wire, machine, style=style, contact_offset=contact_offset, mesh=mesh,
                      hooks=hooks, gingival=gingival, canine_step=canine_step, ends=ends,
-                     elbow_step=elbow_step, elbow_deg=elbow_deg, elbow_distal=elbow_distal)
+                     elbow_step=elbow_step, elbow_deg=elbow_deg, elbow_distal=elbow_distal,
+                     leg_range=(min(1.0, leg), leg))
     if plan.prefinish is not None:
         # the machine bends the flat wire; the step and elbows are formed after
         from .geometry import align_2d, build_polyline, point_to_polyline, segment_lengths, turning_angles
@@ -270,8 +271,11 @@ def main(argv=None):
     p.add_argument("--ends", choices=["elbow", "curl"], default="elbow",
                    help="elbow (default): 0.75 mm gingival step at the lateral-canine embrasure, then a "
                         "90 deg elbow toward the gingiva at the canine click; curl: flat curls")
-    p.add_argument("--elbow-deg", type=float, default=75.0,
-                   help="with elbow ends: how far the wire turns toward the gingiva (default 75)")
+    p.add_argument("--elbow-deg", type=float, default=60.0,
+                   help="with elbow ends: how far the wire turns toward the gingiva (default 60)")
+    p.add_argument("--leg", type=float, default=2.0,
+                   help="with elbow ends: leg length in mm (default 2; shortened, not below 1, "
+                        "to stay 2 mm off the gingiva when gum clicks are given)")
     p.add_argument("--elbow-distal", type=float, default=1.0,
                    help="with elbow ends: mm past the canine click, toward the distal, to put the elbow")
     p.add_argument("--elbow-step", type=float, default=0.0,
@@ -346,7 +350,7 @@ def main(argv=None):
                                      gingival=a.gingival, canine_step=a.canine_step,
                                      ends=a.ends if style == "auto" else "curl",
                                      elbow_step=a.elbow_step, elbow_deg=a.elbow_deg,
-                                     elbow_distal=a.elbow_distal)
+                                     elbow_distal=a.elbow_distal, leg=a.leg)
     print(text)
     return 1 if problems else 0
 

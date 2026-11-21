@@ -225,9 +225,9 @@ def test_elbow_ends_fit_and_unfold_to_a_flat_wire_of_the_same_length(tmp_path):
     assert problems == []                      # the flat wire is machine-buildable
     assert plan.finish and len(plan.finish) == 2
     for f in plan.finish:
-        assert 1.0 <= f["leg_mm"] <= 1.5
+        assert 1.0 <= f["leg_mm"] <= 2.0
         assert f["joggle_from_mm"] > f["elbow_mm"]
-        assert 60 <= f["elbow_deg"] <= 120
+        assert 45 <= f["elbow_deg"] <= 120
     # unfolding the step and elbows keeps the wire's length
     final_len = arc_lengths(plan.curve3())[-1]
     flat_len = arc_lengths(plan.prefinish_dense)[-1]

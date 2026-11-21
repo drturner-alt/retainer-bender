@@ -76,12 +76,14 @@ the 3-click design instead. Open `demo/preview.svg` and read
 ## The canine ends (default)
 
 Each end runs on the teeth at one height (no step, so no gap at the
-embrasure). About 1 mm distal of the canine click it turns **75° toward the
-gingiva** into a **1–1.5 mm leg** down the canine's lingual. The leg is
+embrasure). About 1 mm distal of the canine click it turns **60° toward the
+gingiva** into a **2 mm leg** down the canine's lingual. The leg is
 tilted a degree or two more if needed to clear the canine's bulge. The elbow
 is what stops the wire rolling while it's bonded.
 
-- `--elbow-deg 75`: how far the wire turns toward the gingiva
+- `--elbow-deg 60`: how far the wire turns toward the gingiva
+- `--leg 2.0`: leg length (with the gum clicks it is shortened, not below
+  1 mm, to stay 2 mm off the gingiva)
 - `--elbow-distal 1.0`: mm past the canine click to put the elbow
 - `--elbow-step 0.75`: add a gingival step at the lateral–canine embrasure
   (it opened a 0.17 mm gap at a lateral on the first real scan)
