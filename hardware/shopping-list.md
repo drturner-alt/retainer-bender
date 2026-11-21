@@ -43,8 +43,9 @@ to fit them.
 | Qty | Item | Spec | ~$ |
 |---|---|---|---|
 | 1 | Base plate | 10 mm aluminium ~300 × 150 mm, or 18 mm plywood with a steel plate under the die and arm | 20–40 |
-| — | M3/M4/M5 screws, nuts, heat-set inserts | Assortment kits | 20 |
-| — | Filament | PETG or PA-CF | 25 |
+| — | M3/M4/M5 screws and hex nuts | Assortment kits (the printed parts use captured nuts, not heat-set inserts) | 20 |
+| 1 | Formlabs Rigid 10K resin | Stiff parts near the bend head | ~ 1 cartridge |
+| 1 | Formlabs Tough 2000 (or Tough 1500) resin | Clamps, mounts, enclosure | ~ 1 cartridge |
 
 ## Wire for bending
 

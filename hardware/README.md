@@ -113,8 +113,19 @@ first 6 mm behind the exit (`body_halfwidth_mm`).
 
 - Base: 10 mm aluminium plate, or 18 mm plywood with a steel plate under
   the die/arm area. The die and the arm motor must share one stiff plate.
-- Print brackets, the pin-vise mount, the tube clamps, the deck and
-  covers in PETG or PA-CF, with 5+ walls and 40%+ infill.
+- The printed parts are designed for a resin printer (Formlabs Form 4/4B,
+  build volume about 200 × 125 × 210 mm). Nothing is longer than that, and the
+  enclosure is split into panels that fit.
+- Resin: **Rigid 10K** for anything stiff near the bend head (deck, die block
+  holder, tube clamps, servo bracket); **Tough 2000** (or Tough 1500) for
+  parts that flex or take screws repeatedly (carriage mount, switch mounts,
+  enclosure). Dental model resin is fine for the check jigs, not for the
+  machine.
+- Resin parts don't take heat-set inserts. Screws go into captured hex-nut
+  pockets or through-holes with nuts behind; small parts can use
+  self-tapping plastic screws into undersized holes.
+- Wash and fully post-cure (Form Cure) before assembly. Uncured resin parts
+  creep under a clamping screw.
 - **Don't print** the die, the bend pin, the arm, or anything between the die and the
   arm motor that carries load.
 
