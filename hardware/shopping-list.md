@@ -16,7 +16,7 @@ to fit them.
 | 1 | Linear stage with NEMA 17 | [SainSmart 100 mm stage, SFU1605 ball screw, NEMA 17](https://www.sainsmart.com/products/cnc-linear-stage-actuator-with-nema17-stepper-motor) (check the listing says 100 mm travel). Any 100–150 mm ball-screw or lead-screw stage with a NEMA 17 works. **Set `FEED_STEPS_PER_MM` in the firmware to the screw's lead**: 640 for a 5 mm lead (1605), 800 for 4 mm (1204), 1600 for 2 mm (T8×2). | 60–110 |
 | 1 | NEMA 23 stepper + 10:1 planetary gearbox | [StepperOnline 23HS30-2904S-MG10](https://www.omc-stepperonline.com/nema-23-stepper-motor-l-76mm-gear-ratio-10-1-mg-series-planetary-gearbox-23hs30-2904s-mg10), motor and 10:1 gearbox together. 30 arc-min backlash is fine: every bend approaches the wire in the direction it bends, so the slack is taken up before the pin touches. | 46 |
 | 1 | Lift servo | MG90S metal-gear micro servo, e.g. [Adafruit 1143 via Little Bird](https://littlebirdelectronics.com.au/products/micro-servo-mg90s-high-torque-metal-gear) or [Pro Supplies](https://protosupplies.com/product/servo-motor-micro-mg90s/) | 8–20 |
-| 2 | Limit switches | Micro switch with roller lever (stage rear and arm home): [McMaster snap-acting switches](https://www.mcmaster.com/snap-acting-switches) | 5 |
+| 2 | Limit switches | **Omron SS-5GL2**, hinge roller lever, SPDT (stage rear and arm home): [Arrow](https://www.arrow.com/en/products/ss5gl2/omron), [CPC/Farnell](https://cpc.farnell.com/omron/ss-5gl2/microswitch-v4-hinge-roller/dp/SW02697) | 5–10 |
 
 ## Wire path (hardened steel where it touches the wire)
 
@@ -39,7 +39,7 @@ to fit them.
 | 1 | Arm motor driver | [StepperOnline DM542T](https://www.omc-stepperonline.com/digital-stepper-driver-1-0-4-2a-20-50vdc-for-nema-17-23-24-stepper-motor-dm542t) | 30 |
 | 1 | 24 V power supply | [Mean Well LRS-150-24](https://www.trcelectronics.com/products/mean-well-lrs-150-24) (24 V 6.5 A), also at [Digi-Key](https://azcus.digikey.com/en/products/detail/mean-well-usa-inc/LRS-150-24/7705015) | 20 |
 | 1 | 24 V → 5 V regulator for the servo | [Pololu D24V22F5](https://www.pololu.com/product-info-merged/2858) (5 V 2.5 A) | 11 |
-| 1 | Emergency stop, normally closed, mushroom head | Wired to cut motor power *and* signal the controller: [McMaster emergency stop switches](https://www.mcmaster.com/emergency-stop-switches) | 15–30 |
+| 1 | Emergency stop | **Schneider Harmony XB5AS8442**: 40 mm red mushroom, twist to release, 1 NC, 22 mm hole ([Schneider](https://se.com/us/en/product/XB5AS8442/emergency-stop-switching-off-harmony-xb5-plastic-red-mushroom-40mm-22mm-trigger-latching-turn-to-release-1nc), [Zoro](https://zoro.com/schneider-electric-emergency-stop-push-button-22-mm-1nc-red-xb5as8442/i/G8581447)). Add a **ZBE102** NC contact block (confirm it fits the XB5 base) so one contact cuts motor power and the other signals the controller. | 15–45 |
 | — | Wire, terminals, USB cable, small enclosure | | 20 |
 
 ## Frame
